@@ -4,6 +4,8 @@ Textifier is a Python application that provides two main functionalities:
 1. Transcribe video/audio files to VTT format with timestamps using OpenAI's Whisper
 2. Translate VTT files from English to multiple languages while preserving timestamps using mBART
 
+by Sergio Gonzalez
+
 ## Features
 
 - High-quality transcription using OpenAI's Whisper model
