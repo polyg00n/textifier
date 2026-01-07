@@ -76,7 +76,7 @@ sudo pacman -S ffmpeg
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/textifier.git
+git clone https://github.com/polyg00n/textifier.git
 cd textifier
 ```
 
@@ -99,58 +99,261 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Quick Start
+
+### 1. Transcribe Your First Video
+
+```bash
+# Windows
+python textifier.py transcribe "E:\videos\my_video.mp4"
+
+# Linux/macOS
+python textifier.py transcribe /home/user/videos/my_video.mp4
+```
+
+This will:
+- Download the Whisper model (first time only, ~1.5GB)
+- Transcribe the video to `my_video.vtt`
+- Save the VTT file in the same directory
+
+### 2. Download Translation Model (One-Time Setup)
+
+```bash
+python textifier.py download-translation-model
+```
+
+This downloads the mBART model (~1.5GB) for translation.
+
+### 3. Translate Your Transcription
+
+```bash
+# Translate to French (default)
+python textifier.py translate "E:\videos\my_video.vtt"
+
+# Translate to Hindi
+python textifier.py translate "E:\videos\my_video.vtt" -l hi
+```
+
+This creates `my_video_fr.vtt` or `my_video_hi.vtt` with translated subtitles.
+
 ## First Run Setup
 
-On the first run, the application will:
-1. Create a `models` directory
-2. Download and save the Whisper model for transcription
-3. Download and save the mBART model for translation
+### Step 1: Download Transcription Model (Whisper)
 
-This initial setup might take some time depending on your internet connection, but subsequent runs will be faster as the models are stored locally.
+The Whisper model will be automatically downloaded on the first transcription run. When you run the `transcribe` command for the first time, the application will:
+1. Create a `models` directory
+2. Download and save the Whisper base model (~1.5GB)
+
+**Note:** The transcription model downloads automatically - no separate command needed.
+
+### Step 2: Download Translation Model (mBART) - Optional
+
+The translation model must be downloaded separately before you can use the translation feature. To download it:
+
+```bash
+python textifier.py download-translation-model
+```
+
+This will download the mBART model (~1.5GB) and save it locally. This only needs to be done once.
+
+**Important:** You must download the translation model before using the `translate` command, otherwise you'll get an error.
 
 ## Usage
 
+### Command Overview
+
+The application provides three main commands:
+- `transcribe` - Transcribe video/audio files to VTT format
+- `translate` - Translate VTT files from English to other languages
+- `download-translation-model` - Download the translation model
+
 ### Transcribing Media Files
 
-To transcribe a single video or audio file to VTT format:
+#### Single File Transcription
+
+Transcribe a single video or audio file to VTT format:
+
+**Windows:**
 ```bash
-python textifier.py transcribe path/to/your/video.mp4
+# Using backslashes
+python textifier.py transcribe E:\projects\textifier\videos\video.mp4
+
+# Using forward slashes (also works)
+python textifier.py transcribe E:/projects/textifier/videos/video.mp4
+
+# With quotes (handles spaces in paths)
+python textifier.py transcribe "E:\projects\textifier\videos\my video.mp4"
 ```
+
+**Linux/macOS:**
+```bash
+# Absolute path
+python textifier.py transcribe /home/user/videos/video.mp4
+
+# Relative path
+python textifier.py transcribe ./videos/video.mp4
+
+# With quotes (handles spaces)
+python textifier.py transcribe "/home/user/videos/my video.mp4"
+```
+
+#### Batch Folder Transcription
 
 To transcribe all video/audio files in a folder:
+
+**Windows:**
 ```bash
-python textifier.py transcribe path/to/folder -f
+python textifier.py transcribe E:\projects\textifier\videos -f
 ```
 
-Supported input formats:
-- Video: .mp4, .avi, .mkv, .mov, .wmv
-- Audio: .mp3, .wav, .m4a, .aac
+**Linux/macOS:**
+```bash
+python textifier.py transcribe /home/user/videos -f
+```
 
-The output VTT file will be saved in the same directory as the input file with the same name but .vtt extension.
+**What happens:**
+- The application scans the folder for supported media files
+- Processes each file sequentially
+- Creates a VTT file for each input file in the same directory
+- Shows progress for each file
+
+**Supported input formats:**
+- Video: `.mp4`, `.avi`, `.mkv`, `.mov`, `.wmv`
+- Audio: `.mp3`, `.wav`, `.m4a`, `.aac`
+
+**Output:**
+- The output VTT file is saved in the same directory as the input file
+- The filename matches the input file but with `.vtt` extension
+- Example: `video.mp4` → `video.vtt`
 
 ### Translating VTT Files
 
-To translate a single VTT file from English to French (default):
+#### Prerequisites
+
+Before translating, ensure you've downloaded the translation model:
 ```bash
-python textifier.py translate path/to/your/subtitles.vtt
+python textifier.py download-translation-model
 ```
 
-To translate a single VTT file from English to Hindi:
+#### Single File Translation
+
+Translate a single VTT file from English to French (default):
+
+**Windows:**
 ```bash
-python textifier.py translate path/to/your/subtitles.vtt -l hi
+python textifier.py translate E:\projects\textifier\videos\video.vtt
 ```
 
-To translate all VTT files in a folder to French:
+**Linux/macOS:**
+```bash
+python textifier.py translate /home/user/videos/video.vtt
+```
+
+Translate to Hindi:
+```bash
+python textifier.py translate path/to/video.vtt -l hi
+```
+
+#### Batch Folder Translation
+
+Translate all VTT files in a folder to French:
 ```bash
 python textifier.py translate path/to/folder -f
 ```
 
-To translate all VTT files in a folder to Hindi:
+Translate all VTT files in a folder to Hindi:
 ```bash
 python textifier.py translate path/to/folder -f -l hi
 ```
 
-The translated VTT file will be saved in the same directory with the language code appended to the filename (e.g., "_fr" for French, "_hi" for Hindi).
+**What happens:**
+- The application scans the folder for `.vtt` files
+- Processes each file sequentially
+- Preserves all timestamps and formatting
+- Creates a translated VTT file for each input file
+
+**Output:**
+- The translated VTT file is saved in the same directory as the input file
+- The filename has the language code appended: `video.vtt` → `video_fr.vtt` (French) or `video_hi.vtt` (Hindi)
+
+**Supported target languages:**
+- French (`fr`) - Default
+- Hindi (`hi`)
+
+### Command-Line Options
+
+#### Transcribe Command
+```bash
+python textifier.py transcribe <input_file_or_folder> [options]
+
+Arguments:
+  input_file_or_folder    Path to video/audio file or folder containing media files
+
+Options:
+  -f, --folder            Process all supported files in the specified folder
+```
+
+**Examples:**
+```bash
+# Single file
+python textifier.py transcribe video.mp4
+
+# Batch folder processing
+python textifier.py transcribe ./videos -f
+```
+
+#### Translate Command
+```bash
+python textifier.py translate <input_file_or_folder> [options]
+
+Arguments:
+  input_file_or_folder    Path to VTT file or folder containing VTT files
+
+Options:
+  -f, --folder            Process all VTT files in the specified folder
+  -l, --lang {fr,hi}      Target language (default: fr)
+                          fr = French, hi = Hindi
+```
+
+**Examples:**
+```bash
+# Single file, French (default)
+python textifier.py translate video.vtt
+
+# Single file, Hindi
+python textifier.py translate video.vtt -l hi
+
+# Batch folder, French
+python textifier.py translate ./videos -f
+
+# Batch folder, Hindi
+python textifier.py translate ./videos -f -l hi
+```
+
+#### Download Translation Model Command
+```bash
+python textifier.py download-translation-model
+```
+
+This command downloads the mBART translation model. It only needs to be run once, or if you want to re-download the model.
+
+### Path Format Support
+
+The application supports various path formats for cross-platform compatibility:
+
+**Windows:**
+- `E:\projects\textifier\videos\file.vtt` (backslashes)
+- `E:/projects/textifier/videos/file.vtt` (forward slashes)
+- `"E:\projects\textifier\videos\file.vtt"` (quoted, handles spaces)
+- `E:\\projects\\textifier\\videos\\file.vtt` (escaped backslashes)
+
+**Linux/macOS:**
+- `/home/user/videos/file.vtt` (absolute path)
+- `./videos/file.vtt` (relative path)
+- `~/videos/file.vtt` (home directory shortcut)
+- `"/home/user/videos/file with spaces.vtt"` (quoted, handles spaces)
+
+All formats are automatically normalized by the application.
 
 ## Linux-Specific Notes
 
@@ -183,7 +386,11 @@ sudo pacman -S python-pip python-virtualenv ffmpeg
 
 ## Output Format
 
-The application generates VTT files in the following format:
+### VTT File Structure
+
+The application generates WebVTT (Web Video Text Tracks) files that are compatible with most video players and platforms (YouTube, Vimeo, HTML5 video players, etc.).
+
+**File Format:**
 ```
 WEBVTT
 
@@ -194,18 +401,293 @@ Transcribed or translated text here
 2
 00:00:11.080 --> 00:00:16.680
 Next segment of text
+
+3
+00:00:16.680 --> 00:00:22.500
+Another segment continues here
 ```
+
+**Components:**
+- `WEBVTT` - File header (required)
+- Empty line separator
+- Cue number (sequential: 1, 2, 3, ...)
+- Timestamp range (`HH:MM:SS.mmm --> HH:MM:SS.mmm`)
+- Text content (the transcribed or translated text)
+- Empty line between cues
+
+### File Naming Convention
+
+**Transcription:**
+- Input: `video.mp4`
+- Output: `video.vtt`
+
+**Translation:**
+- Input: `video.vtt`
+- Output: `video_fr.vtt` (French) or `video_hi.vtt` (Hindi)
+
+### Example Workflow
+
+1. **Original video:** `presentation.mp4`
+2. **After transcription:** `presentation.vtt` (English subtitles)
+3. **After translation:** `presentation_fr.vtt` (French subtitles)
+
+All files are saved in the same directory as the source file.
+
+### Using VTT Files
+
+**With Video Players:**
+- Most modern video players support VTT files
+- Load the VTT file as a subtitle track in your video player
+- The timestamps ensure perfect synchronization
+
+**With Video Platforms:**
+- **YouTube:** Upload VTT file when uploading video
+- **Vimeo:** Add as subtitle track in video settings
+- **HTML5:** Use the `<track>` element in video tags
+
+**Example HTML5 Usage:**
+```html
+<video controls>
+  <source src="video.mp4" type="video/mp4">
+  <track kind="subtitles" src="video.vtt" srclang="en" label="English">
+  <track kind="subtitles" src="video_fr.vtt" srclang="fr" label="French">
+</video>
+```
+
+## Complete Example Workflow
+
+Here's a complete example of transcribing and translating a video:
+
+### Step-by-Step Example
+
+**1. Start with a video file:**
+```
+E:\projects\textifier\videos\presentation.mp4
+```
+
+**2. Transcribe the video:**
+```bash
+python textifier.py transcribe "E:\projects\textifier\videos\presentation.mp4"
+```
+
+**Output:**
+```
+Downloading Whisper model...
+Transcription completed. Output saved to: E:\projects\textifier\videos\presentation.vtt
+```
+
+**3. Download translation model (first time only):**
+```bash
+python textifier.py download-translation-model
+```
+
+**Output:**
+```
+Downloading translation model...
+Translation model downloaded and saved successfully!
+```
+
+**4. Translate to French:**
+```bash
+python textifier.py translate "E:\projects\textifier\videos\presentation.vtt"
+```
+
+**Output:**
+```
+Loading translation model...
+Translation completed. Output saved to: E:\projects\textifier\videos\presentation_fr.vtt
+```
+
+**5. Translate to Hindi:**
+```bash
+python textifier.py translate "E:\projects\textifier\videos\presentation.vtt" -l hi
+```
+
+**Output:**
+```
+Loading translation model...
+Translation completed. Output saved to: E:\projects\textifier\videos\presentation_hi.vtt
+```
+
+**Final Result:**
+```
+videos/
+├── presentation.mp4          (original video)
+├── presentation.vtt            (English subtitles)
+├── presentation_fr.vtt       (French subtitles)
+└── presentation_hi.vtt       (Hindi subtitles)
+```
+
+### Batch Processing Example
+
+**Process an entire folder of videos:**
+
+```bash
+# Transcribe all videos in folder
+python textifier.py transcribe "E:\projects\textifier\videos" -f
+
+# Output:
+# Found 5 files to transcribe
+# Processing file 1/5: video1.mp4
+# Transcription completed. Output saved to: E:\projects\textifier\videos\video1.vtt
+# Processing file 2/5: video2.mp4
+# ...
+
+# Translate all VTT files to French
+python textifier.py translate "E:\projects\textifier\videos" -f
+
+# Output:
+# Found 5 files to translate
+# Processing file 1/5: video1.vtt
+# Translation completed. Output saved to: E:\projects\textifier\videos\video1_fr.vtt
+# ...
+```
+
+## Advanced Usage
+
+### Changing Whisper Model Size
+
+By default, the application uses the Whisper "base" model. You can change this in `textifier.py`:
+
+```python
+# In the __init__ method, change:
+self.whisper_model = whisper.load_model("base", ...)
+
+# Available options (from smallest to largest):
+# "tiny"   - Fastest, least accurate (~75MB)
+# "base"   - Balanced (default) (~150MB)
+# "small"  - Better accuracy (~500MB)
+# "medium" - High accuracy (~1.5GB)
+# "large"  - Best accuracy (~3GB)
+```
+
+**Trade-offs:**
+- Smaller models: Faster processing, lower accuracy, less memory
+- Larger models: Slower processing, higher accuracy, more memory
+
+### Model Storage Location
+
+Models are stored in the `models` directory in your project folder:
+```
+textifier/
+├── models/
+│   ├── whisper/          # Whisper transcription model
+│   └── translation/       # mBART translation model
+├── textifier.py
+└── requirements.txt
+```
+
+To use a different location, modify the `models_dir` variable in the `Textifier.__init__()` method.
+
+### Processing Large Files
+
+For very long videos or audio files:
+- Transcription time scales with file length
+- Consider using a smaller Whisper model for faster processing
+- The application processes files sequentially, so batch processing may take time
+
+### Memory Requirements
+
+**Minimum:**
+- 4GB RAM for base models
+- 8GB RAM recommended for better performance
+
+**Disk Space:**
+- ~3GB for Whisper base model
+- ~1.5GB for mBART translation model
+- Additional space for input/output files
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. "Translation model not found" Error
+
+**Problem:** You're trying to translate without downloading the translation model first.
+
+**Solution:**
+```bash
+python textifier.py download-translation-model
+```
+
+#### 2. FFmpeg Not Found
+
+**Problem:** `FileNotFoundError` or errors related to audio processing.
+
+**Solution:**
+- Ensure FFmpeg is installed and in your system PATH
+- Verify installation: `ffmpeg -version`
+- See installation instructions above
+
+#### 3. Out of Memory Errors
+
+**Problem:** System runs out of memory during processing.
+
+**Solutions:**
+- Close other applications
+- Use a smaller Whisper model (e.g., "tiny" or "base")
+- Process files one at a time instead of batch processing
+- Increase system swap/virtual memory
+
+#### 4. Path Not Found Errors
+
+**Problem:** `FileNotFoundError` when specifying file paths.
+
+**Solutions:**
+- Use absolute paths instead of relative paths
+- Check that the file exists
+- Ensure proper path formatting (see Path Format Support section)
+- Use quotes around paths with spaces
+
+#### 5. Symlink Warnings (Windows)
+
+**Problem:** Warning about symlinks not being supported.
+
+**Solutions:**
+- **Option 1:** Enable Developer Mode in Windows Settings
+- **Option 2:** Run Python as administrator
+- **Option 3:** Ignore the warning (functionality not affected)
+
+#### 6. Slow Processing
+
+**Problem:** Transcription or translation takes too long.
+
+**Solutions:**
+- Use a smaller Whisper model
+- Process shorter files
+- Ensure you have sufficient CPU and RAM
+- Check that models are loaded from disk (not downloading each time)
+
+#### 7. Translation Quality Issues
+
+**Problem:** Translations are not accurate.
+
+**Solutions:**
+- Ensure source text is in English
+- Check that the correct target language is specified
+- For better quality, consider using a larger Whisper model for transcription
+- Review the source transcription for accuracy
+
+### Getting Help
+
+If you encounter issues not covered here:
+
+1. Check that all dependencies are installed: `pip install -r requirements.txt`
+2. Verify Python version: `python --version` (should be 3.8+)
+3. Check that models are downloaded correctly
+4. Review error messages for specific details
+5. Ensure sufficient disk space and memory
 
 ## Notes
 
-- The transcription model can be changed by modifying the `whisper.load_model()` parameter in the code. Available options are: "tiny", "base", "small", "medium", "large"
-- Models are stored in the `models` directory and will be reused on subsequent runs
-- The first run will download the necessary models, which might take some time depending on your internet connection
-- For Windows users: If you see a symlink warning, you can either:
-  - Enable Developer Mode in Windows
-  - Run Python as administrator
-  - Ignore the warning (it won't affect functionality)
+- **Model Downloads:** The first run of transcription will download the Whisper model automatically. The translation model must be downloaded separately using the `download-translation-model` command.
+- **Model Reuse:** Models are stored locally in the `models` directory and will be reused on subsequent runs, making them faster.
+- **Internet Required:** Internet connection is only needed for the initial model downloads. After that, the application works offline.
+- **File Formats:** The application supports common video and audio formats. If your format isn't supported, convert it using FFmpeg first.
+- **Batch Processing:** When processing folders, files are processed sequentially. Large batches may take considerable time.
+- **Path Handling:** The application automatically normalizes paths, so you can use Windows, Linux, or macOS path formats interchangeably.
+- **Language Support:** Currently supports English to French and Hindi translations. More languages can be added by modifying the language codes in the code.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.

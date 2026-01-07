@@ -6,45 +6,66 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 
 class Textifier:
-    def __init__(self):
+    def __init__(self, load_translation_model=False, whisper_model_name="large"):
         # Create models directory if it doesn't exist
         self.models_dir = Path("models")
         self.models_dir.mkdir(exist_ok=True)
         
         # Initialize Whisper model
+        self.whisper_model_name = whisper_model_name
         whisper_model_path = self.models_dir / "whisper"
         if not whisper_model_path.exists():
-            print("Downloading Whisper model...")
-            self.whisper_model = whisper.load_model("base", download_root=str(whisper_model_path))
+            print(f"Downloading Whisper model ({whisper_model_name})...")
+            self.whisper_model = whisper.load_model(whisper_model_name, download_root=str(whisper_model_path))
         else:
-            self.whisper_model = whisper.load_model("base", download_root=str(whisper_model_path))
+            self.whisper_model = whisper.load_model(whisper_model_name, download_root=str(whisper_model_path))
         
-        # Initialize translation model
-        translation_model_path = self.models_dir / "translation"
+        # Translation model will be loaded lazily when needed
+        self.translation_tokenizer = None
+        self.translation_model = None
+        self.translation_model_path = self.models_dir / "translation"
         
-        if not translation_model_path.exists():
-            print("Downloading translation model...")
-            self.translation_tokenizer = AutoTokenizer.from_pretrained(
-                "facebook/nllb-200-distilled-600M",
-                cache_dir=str(translation_model_path)
+        # Only load translation model if explicitly requested
+        if load_translation_model:
+            self._load_translation_model()
+    
+    def _load_translation_model(self):
+        """Lazy load the translation model when needed."""
+        if self.translation_model is not None:
+            return  # Already loaded
+        
+        if not self.translation_model_path.exists():
+            raise FileNotFoundError(
+                "Translation model not found. Please download it first using: "
+                "python textifier.py download-translation-model"
             )
-            self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(
-                "facebook/nllb-200-distilled-600M",
-                cache_dir=str(translation_model_path)
-            )
-        else:
-            self.translation_tokenizer = AutoTokenizer.from_pretrained(
-                "facebook/nllb-200-distilled-600M",
-                cache_dir=str(translation_model_path)
-            )
-            self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(
-                "facebook/nllb-200-distilled-600M",
-                cache_dir=str(translation_model_path)
-            )
+        
+        print("Loading translation model...")
+        self.translation_tokenizer = AutoTokenizer.from_pretrained(
+            "facebook/mbart-large-50-many-to-many-mmt",
+            cache_dir=str(self.translation_model_path)
+        )
+        self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(
+            "facebook/mbart-large-50-many-to-many-mmt",
+            cache_dir=str(self.translation_model_path)
+        )
+    
+    def download_translation_model(self):
+        """Download and save the translation model."""
+        print("Downloading translation model...")
+        self.translation_tokenizer = AutoTokenizer.from_pretrained(
+            "facebook/mbart-large-50-many-to-many-mmt",
+            cache_dir=str(self.translation_model_path)
+        )
+        self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(
+            "facebook/mbart-large-50-many-to-many-mmt",
+            cache_dir=str(self.translation_model_path)
+        )
         
         # Save models to disk
-        torch.save(self.translation_model.state_dict(), translation_model_path / "model.pt")
-        self.translation_tokenizer.save_pretrained(translation_model_path)
+        torch.save(self.translation_model.state_dict(), self.translation_model_path / "model.pt")
+        self.translation_tokenizer.save_pretrained(self.translation_model_path)
+        print("Translation model downloaded and saved successfully!")
 
     def _normalize_path(self, path_str):
         """
@@ -113,20 +134,27 @@ class Textifier:
         Returns:
             str: Path to the translated VTT file
         """
+        # Load translation model if not already loaded
+        self._load_translation_model()
+        
         # Normalize input path
         input_path = self._normalize_path(input_path)
         
         # Create output path with language suffix
         output_path = input_path.with_name(f"{input_path.stem}_{target_lang}{input_path.suffix}")
         
-        # Set up language codes for NLLB
+        # Set up language codes for mBART
         lang_codes = {
-            "fr": "fra_Latn",  # French
-            "hi": "hin_Deva"   # Hindi
+            "fr": "fr_XX",  # French
+            "hi": "hi_IN"   # Hindi
         }
         
         if target_lang not in lang_codes:
             raise ValueError(f"Unsupported target language: {target_lang}. Supported languages: {list(lang_codes.keys())}")
+        
+        # Set source and target language for mBART
+        self.translation_tokenizer.src_lang = "en_XX"
+        target_lang_code = lang_codes[target_lang]
         
         with open(input_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -156,9 +184,9 @@ class Textifier:
                 
                 # Only translate if the line contains actual text (not just numbers or timestamps)
                 if line and not line.isdigit() and " --> " not in line:
-                    # Prepare text for translation with language codes
+                    # Prepare text for translation
                     inputs = self.translation_tokenizer(
-                        f">>{lang_codes[target_lang]}<< {line}",
+                        line,
                         return_tensors="pt",
                         padding=True,
                         truncation=True,
@@ -168,6 +196,7 @@ class Textifier:
                     # Generate translation with improved parameters
                     translated = self.translation_model.generate(
                         **inputs,
+                        forced_bos_token_id=self.translation_tokenizer.lang_code_to_id[target_lang_code],
                         max_length=512,
                         num_beams=5,
                         early_stopping=True,
@@ -204,6 +233,9 @@ def main():
     transcribe_parser = subparsers.add_parser("transcribe", help="Transcribe a video/audio file to VTT")
     transcribe_parser.add_argument("input_file", help="Path to the input video/audio file or folder")
     transcribe_parser.add_argument("-f", "--folder", action="store_true", help="Process all files in the specified folder")
+    transcribe_parser.add_argument("-m", "--model", default="large", 
+                                choices=["tiny", "base", "small", "medium", "large"],
+                                help="Whisper model size (default: large)")
     
     # Translate command
     translate_parser = subparsers.add_parser("translate", help="Translate a VTT file from English to another language")
@@ -212,8 +244,15 @@ def main():
     translate_parser.add_argument("-l", "--lang", choices=["fr", "hi"], default="fr", 
                                 help="Target language (fr for French, hi for Hindi)")
     
+    # Download translation model command
+    download_parser = subparsers.add_parser("download-translation-model", 
+                                          help="Download the translation model (mBART)")
+    
     args = parser.parse_args()
-    textifier = Textifier()
+    
+    # Get model name from args if transcribe command, otherwise use default
+    whisper_model_name = getattr(args, 'model', 'large')
+    textifier = Textifier(whisper_model_name=whisper_model_name)
     
     try:
         if args.command == "transcribe":
@@ -264,6 +303,8 @@ def main():
                 # Process single file
                 output_path = textifier.translate_vtt(args.input_file, args.lang)
                 print(f"Translation completed. Output saved to: {output_path}")
+        elif args.command == "download-translation-model":
+            textifier.download_translation_model()
         else:
             parser.print_help()
     except FileNotFoundError as e:
