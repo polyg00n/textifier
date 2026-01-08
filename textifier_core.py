@@ -43,15 +43,21 @@ logging.basicConfig(
 
 class ModelManager:
     """Handles downloading, verifying, and deleting models."""
-    def __init__(self, models_dir="models", status_callback=None):
-        self.models_dir = Path(models_dir)
+    def __init__(self, models_dir=None, status_callback=None):
+        # Resolve models_dir relative to this file to ensure consistency
+        if models_dir is None:
+            base_dir = Path(__file__).parent.absolute()
+            self.models_dir = base_dir / "models"
+        else:
+            self.models_dir = Path(models_dir).absolute()
+            
         self.whisper_dir = self.models_dir / "whisper"
         self.translation_dir = self.models_dir / "translation"
         self.status_callback = status_callback
         
-        self.models_dir.mkdir(exist_ok=True)
-        self.whisper_dir.mkdir(exist_ok=True)
-        self.translation_dir.mkdir(exist_ok=True)
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        self.whisper_dir.mkdir(parents=True, exist_ok=True)
+        self.translation_dir.mkdir(parents=True, exist_ok=True)
 
     def _update_status(self, message):
         logging.info(message)
@@ -112,7 +118,10 @@ class ModelManager:
         return False
 
     def is_translation_model_available(self):
-        return self.translation_dir.exists() and (self.translation_dir / "config.json").exists()
+        # mBART needs config and the sentencepiece model
+        return (self.translation_dir.exists() and 
+                (self.translation_dir / "config.json").exists() and 
+                (self.translation_dir / "sentencepiece.bpe.model").exists())
 
     def download_translation_model(self):
         """Download mBART model."""
