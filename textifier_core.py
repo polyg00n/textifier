@@ -7,6 +7,7 @@ import sys
 import time
 import subprocess
 import numpy as np
+import csv
 
 # Confgure logger
 # import whisper
@@ -269,13 +270,32 @@ class Translator:
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
         self._update_status("Translation model loaded.")
 
-    def translate(self, text, target_lang="fr"):
+    def translate(self, text, source_lang="en", target_lang="fr"):
         self.load_model()
-        lang_codes = {"fr": "fr_XX", "hi": "hi_IN"}
-        if target_lang not in lang_codes:
-            raise ValueError(f"Unsupported language: {target_lang}")
+        # Comprehensive mBART-50 language code mapping
+        lang_codes = {
+            "en": "en_XX", "fr": "fr_XX", "es": "es_XX", "de": "de_DE", "it": "it_IT",
+            "pt": "pt_XX", "nl": "nl_XX", "ru": "ru_RU", "pl": "pl_PL", "tr": "tr_TR",
+            "hi": "hi_IN", "gu": "gu_IN", "mr": "mr_IN", "ta": "ta_IN", "te": "te_IN",
+            "bn": "bn_IN", "ml": "ml_IN", "ja": "ja_XX", "ko": "ko_KR", "zh": "zh_CN",
+            "ar": "ar_AR", "he": "he_IL", "fa": "fa_IR", "ur": "ur_PK", "vi": "vi_VN",
+            "th": "th_TH", "id": "id_ID", "ms": "ms_MY", "tl": "tl_XX", "sw": "sw_KE",
+            "af": "af_ZA", "xh": "xh_ZA", "cs": "cs_CZ", "sk": "sk_SK", "hr": "hr_HR",
+            "sr": "sr_RS", "bg": "bg_BG", "mk": "mk_MK", "uk": "uk_UA", "ro": "ro_RO",
+            "hu": "hu_HU", "fi": "fi_FI", "sv": "sv_SE", "no": "no_XX", "da": "da_DK",
+            "et": "et_EE", "lv": "lv_LV", "lt": "lt_LT", "ka": "ka_GE", "az": "az_AZ",
+            "kk": "kk_KZ", "mn": "mn_MN", "ne": "ne_NP", "si": "si_LK", "my": "my_MM",
+            "km": "km_KH", "ps": "ps_AF"
+        }
+        
+        # Get mBART codes or use input as-is if already in mBART format
+        src_code = lang_codes.get(source_lang, source_lang)
+        tgt_code = lang_codes.get(target_lang, target_lang)
+        
+        if tgt_code not in self.tokenizer.lang_code_to_id:
+            raise ValueError(f"Unsupported target language: {target_lang}")
             
-        self.tokenizer.src_lang = "en_XX"
+        self.tokenizer.src_lang = src_code
         inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
         translated = self.model.generate(
             **inputs,
@@ -312,6 +332,24 @@ class FormatHandler:
         with open(path, "w", encoding="utf-8") as f:
             for i, s in enumerate(segments):
                 f.write(f"{i+1}\n{FormatHandler.format_srt_time(s.start)} --> {FormatHandler.format_srt_time(s.end)}\n{s.text.strip()}\n\n")
+    
+    @staticmethod
+    def save_txt(segments, path):
+        with open(path, "w", encoding="utf-8") as f:
+            for s in segments:
+                f.write(s.text.strip() + "\n")
+    
+    @staticmethod
+    def save_csv(segments, path):
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Start", "End", "Text"])
+            for s in segments:
+                writer.writerow([
+                    FormatHandler.format_vtt_time(s.start),
+                    FormatHandler.format_vtt_time(s.end),
+                    s.text.strip()
+                ])
 
     @staticmethod
     def parse_vtt(file_path):
@@ -346,6 +384,83 @@ class FormatHandler:
             f.write("WEBVTT\n\n")
             for i, cue in enumerate(data):
                 f.write(f"{i+1}\n{cue['start']} --> {cue['end']}\n{cue['text']}\n\n")
+    
+    @staticmethod
+    def parse_srt(file_path):
+        """Parse an SRT file into a list of dictionaries."""
+        segments = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            blocks = content.strip().split('\n\n')
+            for block in blocks:
+                lines = block.strip().split('\n')
+                if len(lines) >= 3:
+                    # Skip index line, get timestamp and text
+                    timestamp_line = lines[1] if '-->' in lines[1] else (lines[0] if '-->' in lines[0] else None)
+                    if timestamp_line and '-->' in timestamp_line:
+                        times = timestamp_line.split(' --> ')
+                        if len(times) == 2:
+                            start, end = times[0].strip(), times[1].strip()
+                            # Join remaining lines as text
+                            text_start_idx = 2 if '-->' in lines[1] else 1
+                            text = '\n'.join(lines[text_start_idx:])
+                            segments.append({'start': start, 'end': end, 'text': text})
+        except Exception as e:
+            logging.error(f"Error parsing SRT: {e}")
+        return segments
+    
+    @staticmethod
+    def save_srt_from_data(data, output_path):
+        """Save SRT data (list of dicts) to a file."""
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for i, segment in enumerate(data, 1):
+                f.write(f"{i}\n{segment['start']} --> {segment['end']}\n{segment['text']}\n\n")
+    
+    @staticmethod
+    def parse_csv(file_path):
+        """Parse a CSV file into a list of dictionaries."""
+        segments = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if 'Start' in row and 'End' in row and 'Text' in row:
+                        segments.append({
+                            'start': row['Start'],
+                            'end': row['End'],
+                            'text': row['Text']
+                        })
+        except Exception as e:
+            logging.error(f"Error parsing CSV: {e}")
+        return segments
+    
+    @staticmethod
+    def save_csv_from_data(data, output_path):
+        """Save CSV data (list of dicts) to a file."""
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Start', 'End', 'Text'])
+            for segment in data:
+                writer.writerow([segment['start'], segment['end'], segment['text']])
+    
+    @staticmethod
+    def parse_txt(file_path):
+        """Parse a TXT file into a list of text lines."""
+        lines = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+        except Exception as e:
+            logging.error(f"Error parsing TXT: {e}")
+        return lines
+    
+    @staticmethod
+    def save_txt_from_data(lines, output_path):
+        """Save text lines to a TXT file."""
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for line in lines:
+                f.write(line + '\n')
 
 class CallbackStream:
     """Redirects writes to a callback function."""
@@ -401,10 +516,18 @@ class TextifierCore:
 
     def transcribe_media(self, input_path, output_dir=None, **kwargs):
         input_path = self._normalize_path(input_path)
-        output_format = kwargs.pop('output_format', 'vtt').lower()
         
-        ext = f".{output_format}"
-        output_path = (Path(output_dir) if output_dir else input_path.parent) / input_path.with_suffix(ext).name
+        # CRITICAL FIX FOR GUI COMPATIBILITY:
+        # The GUI passes 'output_format' in kwargs, but faster-whisper will crash
+        # if it receives an unknown argument. We remove it here.
+        # We ignore the requested format and simply output ALL formats.
+        _ = kwargs.pop('output_format', None)
+        
+        # IMPLEMENTATION OF PUNCTUATION FIX
+        # If no initial prompt is provided, we supply a standard one to force punctuation/capitalization style.
+        # This prevents the model from "drifting" into lowercase/no-punctuation mode.
+        if 'initial_prompt' not in kwargs or kwargs['initial_prompt'] is None:
+            kwargs['initial_prompt'] = "Hello, welcome to my lecture. I will use proper punctuation, capitalization, and grammar."
         
         if not self.transcriber.whisper_model:
             self.load_whisper_model()
@@ -413,26 +536,87 @@ class TextifierCore:
         if not result: return None
         segments, info = result
         
-        self._update_status(f"Writing {output_format.upper()}...")
-        if output_format == "srt":
-            self.format_handler.save_srt(segments, output_path)
-        else:
-            self.format_handler.save_vtt(segments, output_path)
-            
-        return str(output_path)
-
-    def translate_vtt(self, input_path, target_lang="fr", output_dir=None):
-        input_path = self._normalize_path(input_path)
-        cues = self.format_handler.parse_vtt(input_path)
+        self._update_status(f"Writing all formats (VTT, SRT, TXT, CSV)...")
         
-        self._update_status(f"Translating {len(cues)} cues...")
-        for i, cue in enumerate(cues):
-            if i % 10 == 0: self._update_status(f"Translating... {i}/{len(cues)}")
-            cue['text'] = self.translator.translate(cue['text'], target_lang)
+        base_output_path = (Path(output_dir) if output_dir else input_path.parent) / input_path.stem
+        created_files = []
+
+        # Save VTT
+        vtt_path = base_output_path.with_suffix(".vtt")
+        self.format_handler.save_vtt(segments, vtt_path)
+        created_files.append(str(vtt_path))
+
+        # Save SRT
+        srt_path = base_output_path.with_suffix(".srt")
+        self.format_handler.save_srt(segments, srt_path)
+        created_files.append(str(srt_path))
+
+        # Save TXT
+        txt_path = base_output_path.with_suffix(".txt")
+        self.format_handler.save_txt(segments, txt_path)
+        created_files.append(str(txt_path))
+
+        # Save CSV
+        csv_path = base_output_path.with_suffix(".csv")
+        self.format_handler.save_csv(segments, csv_path)
+        created_files.append(str(csv_path))
             
-        out_suffix = f"_{target_lang}.vtt"
+        return created_files
+
+    def translate_vtt(self, input_path, source_lang="en", target_lang="fr", output_dir=None):
+        """Legacy method for VTT translation. Calls translate_file() internally."""
+        return self.translate_file(input_path, source_lang, target_lang, output_dir)
+    
+    def translate_file(self, input_path, source_lang="en", target_lang="fr", output_dir=None):
+        """Translate any supported file format (VTT, SRT, TXT, CSV) to target language."""
+        input_path = self._normalize_path(input_path)
+        
+        # Detect format from extension
+        ext = input_path.suffix.lower()
+        
+        if ext == '.vtt':
+            data = self.format_handler.parse_vtt(input_path)
+            data_type = 'segments'
+        elif ext == '.srt':
+            data = self.format_handler.parse_srt(input_path)
+            data_type = 'segments'
+        elif ext == '.csv':
+            data = self.format_handler.parse_csv(input_path)
+            data_type = 'segments'
+        elif ext == '.txt':
+            data = self.format_handler.parse_txt(input_path)
+            data_type = 'lines'
+        else:
+            raise ValueError(f"Unsupported file format: {ext}. Supported: .vtt, .srt, .txt, .csv")
+        
+        # Translate content
+        if data_type == 'segments':
+            self._update_status(f"Translating {len(data)} segments from {source_lang} to {target_lang}...")
+            for i, segment in enumerate(data):
+                if i % 10 == 0:
+                    self._update_status(f"Translating... {i}/{len(data)}")
+                segment['text'] = self.translator.translate(segment['text'], source_lang=source_lang, target_lang=target_lang)
+        else:  # lines
+            self._update_status(f"Translating {len(data)} lines from {source_lang} to {target_lang}...")
+            for i in range(len(data)):
+                if i % 10 == 0:
+                    self._update_status(f"Translating... {i}/{len(data)}")
+                data[i] = self.translator.translate(data[i], source_lang=source_lang, target_lang=target_lang)
+        
+        # Save translated content in same format
+        out_suffix = f"_{target_lang}{ext}"
         output_path = (Path(output_dir) if output_dir else input_path.parent) / (input_path.stem + out_suffix)
-        self.format_handler.save_vtt_from_data(cues, output_path)
+        
+        if ext == '.vtt':
+            self.format_handler.save_vtt_from_data(data, output_path)
+        elif ext == '.srt':
+            self.format_handler.save_srt_from_data(data, output_path)
+        elif ext == '.csv':
+            self.format_handler.save_csv_from_data(data, output_path)
+        elif ext == '.txt':
+            self.format_handler.save_txt_from_data(data, output_path)
+        
+        self._update_status(f"Translation complete: {output_path.name}")
         return str(output_path)
 
     def _normalize_path(self, path_str):

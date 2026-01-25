@@ -19,6 +19,42 @@ from gui_components import SubtitleEditorFrame, VideoControlFrame
 
 print("Initializing interface...")
 
+# Whisper supported languages (most common ones for dropdown)
+WHISPER_LANGUAGES = [
+    ("Auto-detect", None),
+    ("English", "en"), ("Spanish", "es"), ("French", "fr"), ("German", "de"),
+    ("Italian", "it"), ("Portuguese", "pt"), ("Dutch", "nl"), ("Russian", "ru"),
+    ("Chinese", "zh"), ("Japanese", "ja"), ("Korean", "ko"),
+    ("Arabic", "ar"), ("Hindi", "hi"), ("Turkish", "tr"),
+    ("Polish", "pl"), ("Ukrainian", "uk"), ("Vietnamese", "vi"),
+    ("Thai", "th"), ("Swedish", "sv"), ("Indonesian", "id"),
+    ("Hebrew", "he"), ("Greek", "el"), ("Czech", "cs"),
+    ("Finnish", "fi"), ("Romanian", "ro"), ("Danish", "da"),
+    ("Hungarian", "hu"), ("Tamil", "ta"), ("Norwegian", "no"),
+    ("Gujarati", "gu"), ("Marathi", "mr"), ("Telugu", "te"),
+    ("Bengali", "bn"), ("Urdu", "ur"), ("Punjabi", "pa"),
+]
+
+# mBART-50 supported languages for translation
+MBART_LANGUAGES = [
+    ("English", "en"), ("French", "fr"), ("Spanish", "es"), ("German", "de"),
+    ("Italian", "it"), ("Portuguese", "pt"), ("Dutch", "nl"), ("Russian", "ru"),
+    ("Chinese", "zh"), ("Japanese", "ja"), ("Korean", "ko"),
+    ("Arabic", "ar"), ("Hindi", "hi"), ("Turkish", "tr"),
+    ("Polish", "pl"), ("Ukrainian", "uk"), ("Vietnamese", "vi"),
+    ("Thai", "th"), ("Swedish", "sv"), ("Indonesian", "id"),
+    ("Hebrew", "he"), ("Czech", "cs"), ("Finnish", "fi"),
+    ("Romanian", "ro"), ("Gujarati", "gu"), ("Marathi", "mr"),
+    ("Tamil", "ta"), ("Telugu", "te"), ("Bengali", "bn"),
+    ("Urdu", "ur"), ("Persian", "fa"), ("Swahili", "sw"),
+    ("Tagalog", "tl"), ("Afrikaans", "af"), ("Azerbaijani", "az"),
+    ("Burmese", "my"), ("Croatian", "hr"), ("Estonian", "et"),
+    ("Georgian", "ka"), ("Kazakh", "kk"), ("Khmer", "km"),
+    ("Latvian", "lv"), ("Lithuanian", "lt"), ("Macedonian", "mk"),
+    ("Malayalam", "ml"), ("Mongolian", "mn"), ("Nepali", "ne"),
+    ("Pashto", "ps"), ("Sinhala", "si"), ("Xhosa", "xh"),
+]
+
 
 class TextifierApp(tk.Tk):
     def __init__(self):
@@ -129,31 +165,52 @@ class TextifierApp(tk.Tk):
         ttk.Button(frm_output, text="...", width=3, command=self.browse_custom_out).grid(row=0, column=3, padx=2)
         
         # TRANSCRIBE Section (outputs English VTT)
-        frm_transcribe = ttk.LabelFrame(self.tab_batch, text="Step 1: Transcribe (Video/Audio → English VTT)")
+        frm_transcribe = ttk.LabelFrame(self.tab_batch, text="Step 1: Transcribe (Video/Audio → Text)")
         frm_transcribe.pack(fill="x", padx=10, pady=5)
         
-        ttk.Label(frm_transcribe, text="Whisper Model:").grid(row=0, column=0, padx=5, pady=5)
+        # Row 0: Model selection
+        ttk.Label(frm_transcribe, text="Whisper Model:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.var_model = tk.StringVar(value="large-v3")
         self.opt_model = ttk.Combobox(frm_transcribe, textvariable=self.var_model, 
                                        values=sorted(list(_WHISPER_MODELS.keys())), 
                                        width=18, state="readonly")
-        self.opt_model.grid(row=0, column=1, padx=5)
+        self.opt_model.grid(row=0, column=1, padx=5, sticky="w")
+        ttk.Label(frm_transcribe, text="(larger = more accurate, slower)", foreground="gray").grid(row=0, column=2, padx=5, sticky="w")
         
-        ttk.Label(frm_transcribe, text="(larger = more accurate, slower)", foreground="gray").grid(row=0, column=2, padx=5)
-        ttk.Button(frm_transcribe, text="Transcribe to English", command=self.start_transcribe).grid(row=0, column=3, padx=20, pady=5)
+        # Row 1: Source language selection
+        ttk.Label(frm_transcribe, text="Audio Language:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.var_transcribe_lang = tk.StringVar(value="Auto-detect")
+        lang_display = [f"{name}" for name, _ in WHISPER_LANGUAGES]
+        self.opt_transcribe_lang = ttk.Combobox(frm_transcribe, textvariable=self.var_transcribe_lang,
+                                                values=lang_display, width=18, state="readonly")
+        self.opt_transcribe_lang.grid(row=1, column=1, padx=5, sticky="w")
+        ttk.Label(frm_transcribe, text="(or let Whisper auto-detect)", foreground="gray").grid(row=1, column=2, padx=5, sticky="w")
         
-        # TRANSLATE Section (converts English VTT to other languages)
-        frm_translate = ttk.LabelFrame(self.tab_batch, text="Step 2: Translate (English VTT → Other Language)")
+        # Row 2: Action button
+        ttk.Button(frm_transcribe, text="Transcribe to Text", command=self.start_transcribe).grid(row=2, column=0, columnspan=3, padx=20, pady=10)
+        
+        # TRANSLATE Section (converts VTT to other languages)
+        frm_translate = ttk.LabelFrame(self.tab_batch, text="Step 2: Translate (VTT → Other Language)")
         frm_translate.pack(fill="x", padx=10, pady=5)
         
-        ttk.Label(frm_translate, text="Target Language:").grid(row=0, column=0, padx=5, pady=5)
-        self.var_lang = tk.StringVar(value="fr")
-        self.opt_lang = ttk.Combobox(frm_translate, textvariable=self.var_lang, values=["fr (French)", "hi (Hindi)"], width=12, state="readonly")
-        self.opt_lang.set("fr (French)")
-        self.opt_lang.grid(row=0, column=1, padx=5)
+        # Row 0: Source language
+        ttk.Label(frm_translate, text="Source Language:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.var_translate_source = tk.StringVar(value="English")
+        source_langs = [name for name, _ in MBART_LANGUAGES]
+        self.opt_translate_source = ttk.Combobox(frm_translate, textvariable=self.var_translate_source,
+                                                 values=source_langs, width=18, state="readonly")
+        self.opt_translate_source.grid(row=0, column=1, padx=5, sticky="w")
         
-        ttk.Label(frm_translate, text="(requires existing .vtt file)", foreground="gray").grid(row=0, column=2, padx=5)
-        ttk.Button(frm_translate, text="Translate VTT", command=self.start_translate).grid(row=0, column=3, padx=20, pady=5)
+        # Row 1: Target language
+        ttk.Label(frm_translate, text="Target Language:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.var_translate_target = tk.StringVar(value="French")
+        self.opt_translate_target = ttk.Combobox(frm_translate, textvariable=self.var_translate_target,
+                                                 values=source_langs, width=18, state="readonly")
+        self.opt_translate_target.grid(row=1, column=1, padx=5, sticky="w")
+        
+        # Row 2: Action button
+        ttk.Label(frm_translate, text="(supports VTT, SRT, TXT, CSV files)", foreground="gray").grid(row=2, column=0, padx=5, sticky="w")
+        ttk.Button(frm_translate, text="Translate File", command=self.start_translate).grid(row=2, column=1, padx=5, pady=5, sticky="w")
         
         # Log
         ttk.Label(self.tab_batch, text="Activity Log:").pack(anchor="w", padx=10)
@@ -204,11 +261,29 @@ class TextifierApp(tk.Tk):
             self.core.whisper_model_name = model_name
             self.core.whisper_model = None  # Force reload on next use
         
-        output_dir = self.get_output_dir()
-        threading.Thread(target=self._run_transcribe, args=(input_path, output_dir), daemon=True).start()
+        # Get language selection
+        lang_display = self.var_transcribe_lang.get()
+        # Find the language code from the display name
+        language_code = None
+        for name, code in WHISPER_LANGUAGES:
+            if name == lang_display:
+                language_code = code
+                break
         
-    def _run_transcribe(self, input_path, output_dir, **kwargs):
+        if language_code:
+            self.queue_status(f"Language set to: {lang_display}")
+        else:
+            self.queue_status("Using auto-detect for language")
+        
+        output_dir = self.get_output_dir()
+        threading.Thread(target=self._run_transcribe, args=(input_path, output_dir, language_code), daemon=True).start()
+        
+    def _run_transcribe(self, input_path, output_dir, language=None, **kwargs):
         try:
+            # Add language to kwargs if specified
+            if language is not None:
+                kwargs['language'] = language
+            
             if os.path.isdir(input_path):
                 files = [f for f in Path(input_path).glob('*') if f.suffix.lower() in {'.mp4', '.avi', '.mkv', '.mp3', '.wav', '.m4a', '.aac'}]
                 if not files:
@@ -217,10 +292,14 @@ class TextifierApp(tk.Tk):
                 self.queue_status(f"Found {len(files)} media files to transcribe")
                 for i, f in enumerate(files, 1):
                     self.queue_status(f"Processing {i}/{len(files)}: {f.name}")
-                    self.core.transcribe_media(str(f), output_dir, **kwargs)
+                    result = self.core.transcribe_media(str(f), output_dir, **kwargs)
+                    if result:
+                        self.queue_status(f"Created: {', '.join([Path(p).name for p in result])}")
             else:
                 self.queue_status(f"Processing: {os.path.basename(input_path)}")
-                self.core.transcribe_media(input_path, output_dir, **kwargs)
+                result = self.core.transcribe_media(input_path, output_dir, **kwargs)
+                if result:
+                    self.queue_status(f"Created: {', '.join([Path(p).name for p in result])}")
             self.queue_status("Transcription Finished!")
         except Exception as e:
             self.queue_status(f"Error during transcription: {e}")
@@ -230,22 +309,46 @@ class TextifierApp(tk.Tk):
         if not input_path:
             messagebox.showwarning("Warning", "Please select an input file or folder.")
             return
-            
-        # Extract language code from dropdown (e.g., "fr (French)" -> "fr")
-        lang_selection = self.var_lang.get()
-        lang = lang_selection.split(" ")[0] if " " in lang_selection else lang_selection
         
+        # Get source and target language selections
+        source_display = self.var_translate_source.get()
+        target_display = self.var_translate_target.get()
+        
+        # Find language codes
+        source_code = None
+        target_code = None
+        for name, code in MBART_LANGUAGES:
+            if name == source_display:
+                source_code = code
+            if name == target_display:
+                target_code = code
+        
+        if not source_code or not target_code:
+            messagebox.showerror("Error", "Invalid language selection")
+            return
+        
+        self.queue_status(f"Translating from {source_display} to {target_display}...")
         output_dir = self.get_output_dir()
-        threading.Thread(target=self._run_translate, args=(input_path, lang, output_dir), daemon=True).start()
+        threading.Thread(target=self._run_translate, args=(input_path, source_code, target_code, output_dir), daemon=True).start()
         
-    def _run_translate(self, input_path, lang, output_dir):
+    def _run_translate(self, input_path, source_lang, target_lang, output_dir):
         try:
             if os.path.isdir(input_path):
-                files = list(Path(input_path).glob('*.vtt'))
+                # Support all translation formats
+                files = []
+                for ext in ['*.vtt', '*.srt', '*.txt', '*.csv']:
+                    files.extend(Path(input_path).glob(ext))
+                
+                if not files:
+                    self.queue_status(f"No translatable files found in {input_path}")
+                    return
+                
+                self.queue_status(f"Found {len(files)} files to translate")
                 for f in files:
-                    self.core.translate_vtt(str(f), target_lang=lang, output_dir=output_dir)
+                    self.queue_status(f"Translating: {f.name}")
+                    self.core.translate_file(str(f), source_lang=source_lang, target_lang=target_lang, output_dir=output_dir)
             else:
-                self.core.translate_vtt(input_path, target_lang=lang, output_dir=output_dir)
+                self.core.translate_file(input_path, source_lang=source_lang, target_lang=target_lang, output_dir=output_dir)
             self.queue_status("Batch Translation Finished.")
         except Exception as e:
             self.queue_status(f"Error: {e}")
@@ -273,6 +376,7 @@ class TextifierApp(tk.Tk):
         
         # --- Variables ---
         self.adv_task = tk.StringVar(value="transcribe")
+        self.adv_language = tk.StringVar(value="Auto-detect")
         self.adv_temp = tk.DoubleVar(value=0.0)
         self.adv_best_of = tk.IntVar(value=5)
         self.adv_beam_size = tk.IntVar(value=5)
@@ -306,8 +410,13 @@ class TextifierApp(tk.Tk):
         lbl_model.pack(fill="x", padx=10, pady=5)
         
         ttk.Label(lbl_model, text="Task:", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        ttk.Radiobutton(lbl_model, text="Transcribe (Keep derived language)", variable=self.adv_task, value="transcribe").grid(row=0, column=1, padx=5)
-        ttk.Radiobutton(lbl_model, text="Translate (Convert to English)", variable=self.adv_task, value="translate").grid(row=0, column=2, padx=5)
+        ttk.Radiobutton(lbl_model, text="Transcribe (Keep original language)", variable=self.adv_task, value="transcribe").grid(row=0, column=1, padx=5, columnspan=2)
+        ttk.Radiobutton(lbl_model, text="Translate (Convert to English)", variable=self.adv_task, value="translate").grid(row=0, column=3, padx=5)
+        
+        ttk.Label(lbl_model, text="Language:", font=("Arial", 10, "bold")).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        lang_display = [f"{name}" for name, _ in WHISPER_LANGUAGES]
+        ttk.Combobox(lbl_model, textvariable=self.adv_language, values=lang_display, width=18, state="readonly").grid(row=1, column=1, padx=5, sticky="w")
+        ttk.Label(lbl_model, text="(Auto-detect or specify source language)", foreground="gray").grid(row=1, column=2, padx=5, sticky="w", columnspan=2)
         
         # --- Audio Decoding ---
         lbl_decoding = ttk.LabelFrame(scrollable_frame, text="Decoding Options")
@@ -379,7 +488,15 @@ class TextifierApp(tk.Tk):
 
     def get_advanced_options(self):
         """Collect all advanced options into a dictionary."""
-        return {
+        # Get language code
+        lang_display = self.adv_language.get()
+        language_code = None
+        for name, code in WHISPER_LANGUAGES:
+            if name == lang_display:
+                language_code = code
+                break
+        
+        options = {
             "task": self.adv_task.get(),
             "temperature": self.adv_temp.get(),
             "beam_size": self.adv_beam_size.get(),
@@ -390,6 +507,12 @@ class TextifierApp(tk.Tk):
             "log_prob_threshold": self.adv_log_prob_threshold.get(),
             "compression_ratio_threshold": self.adv_compression_ratio_threshold.get(),
         }
+        
+        # Only add language if not auto-detect
+        if language_code is not None:
+            options["language"] = language_code
+        
+        return options
 
     def start_advanced_transcribe(self):
         """Start transcription using advanced options."""

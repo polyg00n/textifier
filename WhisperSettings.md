@@ -80,3 +80,78 @@ Textifier runs all models **locally**.
 
 ### FP16 (Half Precision)
 - **Effect**: Using `fp16=True` (default on GPU) halves memory usage and nearly doubles speed on modern NVIDIA cards without significant loss in accuracy.
+
+---
+
+## Language Selection
+
+### Audio Language
+**New in v2.0.0**: Specify the source language of your audio for improved accuracy.
+- **Default**: Auto-detect (Whisper analyzes first 30 seconds)
+- **Options**: 36+ languages supported
+- **Effect**: 
+    - **Auto-detect**: Let Whisper determine the language (recommended for most use cases)
+    - **Explicit Language**: Better accuracy when you know the source language
+    - **Mixed Language**: Use auto-detect; Whisper can handle multi-language audio
+
+**Common Languages**:
+- Western European: English, Spanish, French, German, Italian, Portuguese, Dutch
+- Asian: Chinese, Japanese, Korean, Hindi, Gujarati, Tamil, Telugu, Vietnamese, Thai
+- Eastern European: Russian, Polish, Ukrainian, Czech
+- Middle Eastern: Arabic, Hebrew, Turkish, Persian
+
+**Tip**: If transcription quality is poor with auto-detect, try explicitly setting the language.
+
+---
+
+## Punctuation & Capitalization Fix
+
+### Initial Prompt
+**New in v2.0.0**: Automatically applied to ensure proper punctuation and capitalization.
+
+**Background**: Whisper sometimes produces lowercase text without punctuation when audio begins with silence. Textifier now automatically solves this by providing an `initial_prompt`.
+
+**Default Prompt**:
+```
+"Hello, welcome to my lecture. I will use proper punctuation, capitalization, and grammar."
+```
+
+**Customization**: You can override this in the Advanced tab's "Initial Prompt" field to:
+- Add domain-specific vocabulary (e.g., "React, TypeScript, and JavaScript")
+- Set formatting style (e.g., "Dr. Smith discusses HIPAA compliance...")
+- Provide speaker names for better accuracy
+
+**Effect**: All transcriptions now have professional formatting without additional processing.
+
+---
+
+## Advanced Features Not Yet Exposed
+
+For a complete list of additional Whisper parameters not yet available in the UI, see `MISSING_CAPABILITIES.md`. These include:
+- **VAD (Voice Activity Detection)**: Automatic silence filtering
+- **Word-level timestamps**: Per-word timing data
+- **Repetition penalty**: Prevent looping text
+- **Temperature lists**: Multi-pass decoding
+
+---
+
+## Tips & Best Practices
+
+1. **For Podcasts**: Use larger models (medium/large) with default settings
+2. **For Music/Lyrics**: Lower the "No Speech Threshold" to 0.3-0.4
+3. **For Lectures**: Set explicit language and use initial prompt with technical terms
+4. **For Noisy Audio**: Increase beam size to 10 and enable higher patience
+5. **For Fast Processing**: Use distil-large-v3 or large-v3-turbo models
+
+---
+
+## Multi-Format Output
+
+**New in v2.0.0**: Textifier now automatically generates **4 output formats**:
+- **VTT**: Web-compatible subtitle format
+- **SRT**: Industry-standard for video editors
+- **TXT**: Plain text for reading/analysis
+- **CSV**: Structured data with timestamps for processing
+
+No need to choose a format upfront - you get all of them!
+
