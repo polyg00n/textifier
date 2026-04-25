@@ -357,6 +357,19 @@ class FormatHandler:
                 ])
 
     @staticmethod
+    def save_tsv(segments, path):
+        """Save transcription data to TSV (for objects)."""
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(["start", "end", "text"])
+            for s in segments:
+                writer.writerow([
+                    FormatHandler.format_vtt_time(s.start),
+                    FormatHandler.format_vtt_time(s.end),
+                    s.text.strip()
+                ])
+
+    @staticmethod
     def parse_vtt(file_path):
         """Parse a VTT file into a list of dictionaries."""
         cues = []
@@ -446,6 +459,15 @@ class FormatHandler:
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['Start', 'End', 'Text'])
+            for segment in data:
+                writer.writerow([segment['start'], segment['end'], segment['text']])
+
+    @staticmethod
+    def save_tsv_from_data(data, output_path):
+        """Save TSV data (list of dicts) to a file."""
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(['start', 'end', 'text'])
             for segment in data:
                 writer.writerow([segment['start'], segment['end'], segment['text']])
     
@@ -557,26 +579,91 @@ class Summarizer:
                     return True
         return False
 
-    def summarize(self, text, prompt, provider_config):
+    def _chunk_text(self, text, chunk_size=8000, overlap=500):
+        """Split text into overlapping chunks."""
+        chunks = []
+        if len(text) <= chunk_size:
+            return [text]
+            
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            chunks.append(chunk)
+            start += (chunk_size - overlap)
+            if end >= len(text):
+                break
+        return chunks
+
+    def summarize(self, text, prompt, config):
         """
-        provider_config: {
+        config: {
             'type': 'local'|'cloud',
             'provider': 'ollama'|'lm_studio'|'gemini'|'claude'|'openai',
             'api_key': '...',
-            'base_url': '...' (for local)
+            'base_url': '...',
+            'model': '...',
+            'temperature': 0.3,
+            'max_tokens': 1500,
+            'chunk_size': 8000,
+            'chunk_overlap': 500,
+            'strategy': 'single_pass'|'map_reduce'
         }
         """
-        llm_type = provider_config.get('type')
-        provider = provider_config.get('provider')
+        strategy = config.get('strategy', 'single_pass')
+        chunk_size = config.get('chunk_size', 8000)
+        overlap = config.get('chunk_overlap', 500)
         
-        full_prompt = f"{prompt}\n\nTranscript:\n{text}"
+        if strategy == 'map_reduce' or len(text) > chunk_size:
+            return self._summarize_map_reduce(text, prompt, config)
+        
+        return self._run_llm(text, prompt, config)
+
+    def _summarize_map_reduce(self, text, prompt, config):
+        chunk_size = config.get('chunk_size', 8000)
+        overlap = config.get('chunk_overlap', 500)
+        chunks = self._chunk_text(text, chunk_size, overlap)
+        
+        if len(chunks) == 1:
+            return self._run_llm(chunks[0], prompt, config)
+            
+        self._update_status(f"Map-Reduce: Processing {len(chunks)} chunks...")
+        summaries = []
+        for i, chunk in enumerate(chunks):
+            self._update_status(f"Processing chunk {i+1}/{len(chunks)}...")
+            chunk_prompt = "Extract key insights, core concepts, and actionable items from this section of the transcript for later synthesis.\n\n"
+            summary = self._run_llm(chunk, chunk_prompt, config)
+            summaries.append(f"### Section {i+1}\n{summary}")
+            
+        self._update_status("Map-Reduce: Performing final synthesis...")
+        combined_summaries = "\n\n".join(summaries)
+        final_prompt = (
+            f"{prompt}\n\n"
+            "I will provide you with several batches of notes extracted from a long transcript. "
+            "Consolidate these into a SINGLE, HIGH-VALUE MASTER SUMMARY.\n\n"
+            f"NOTES TO PROCESS:\n\n{combined_summaries}"
+        )
+        
+        # For the final pass, we might want a 'deep' model or more tokens
+        return self._run_llm("", final_prompt, config)
+
+    def _run_llm(self, text, prompt, config):
+        llm_type = config.get('type')
+        provider = config.get('provider')
+        full_prompt = f"{prompt}\n\n{text}" if text else prompt
         
         if llm_type == 'local':
-            return self._summarize_local(full_prompt, provider, provider_config.get('base_url'), model=provider_config.get('model'))
+            return self._summarize_local(full_prompt, provider, config.get('base_url'), 
+                                       model=config.get('model'), 
+                                       temperature=config.get('temperature', 0.3),
+                                       max_tokens=config.get('max_tokens', 1500))
         else:
-            return self._summarize_cloud(full_prompt, provider, provider_config.get('api_key'), model=provider_config.get('model'))
+            return self._summarize_cloud(full_prompt, provider, config.get('api_key'), 
+                                        model=config.get('model'),
+                                        temperature=config.get('temperature', 0.3),
+                                        max_tokens=config.get('max_tokens', 1500))
 
-    def _summarize_local(self, prompt, provider, base_url, model=None):
+    def _summarize_local(self, prompt, provider, base_url, model=None, temperature=0.3, max_tokens=1500):
         if not base_url:
             # Defaults
             base_url = "http://localhost:11434/api/generate" if provider == 'ollama' else "http://localhost:1234/v1/chat/completions"
@@ -586,23 +673,29 @@ class Summarizer:
                 payload = {
                     "model": model if model else "llama3",
                     "prompt": prompt,
-                    "stream": False
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                        "num_predict": max_tokens
+                    }
                 }
-                resp = requests.post(base_url, json=payload, timeout=240)
+                resp = requests.post(base_url, json=payload, timeout=300)
                 data = resp.json()
                 return data.get("response", "No response from Ollama")
             else: # LM Studio (OpenAI compatible)
                 payload = {
                     "model": model if model else "unspecified",
-                    "messages": [{"role": "user", "content": prompt}]
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
                 }
-                resp = requests.post(base_url, json=payload, timeout=240)
+                resp = requests.post(base_url, json=payload, timeout=300)
                 data = resp.json()
                 return data['choices'][0]['message']['content']
         except Exception as e:
             return f"Local LLM Error: {e}"
 
-    def _summarize_cloud(self, prompt, provider, api_key, model=None):
+    def _summarize_cloud(self, prompt, provider, api_key, model=None, temperature=0.3, max_tokens=1500):
         if not api_key:
             return "Error: No API key provided for cloud LLM."
         
@@ -610,7 +703,13 @@ class Summarizer:
             if provider == 'gemini':
                 model_name = model if model else "gemini-1.5-flash"
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": temperature,
+                        "maxOutputTokens": max_tokens
+                    }
+                }
                 resp = requests.post(url, json=payload)
                 data = resp.json()
                 if 'candidates' in data and data['candidates']:
@@ -684,30 +783,41 @@ class TextifierCore:
         if not result: return None
         segments, info = result
         
-        self._update_status(f"Writing all formats (VTT, SRT, TXT, CSV)...")
+        formats = kwargs.get('output_formats', ['vtt', 'srt', 'txt', 'csv', 'tsv'])
+        self._update_status(f"Writing formats: {', '.join(formats)}...")
         
         base_output_path = (Path(output_dir) if output_dir else input_path.parent) / input_path.stem
         created_files = []
 
         # Save VTT
-        vtt_path = base_output_path.with_suffix(".vtt")
-        self.format_handler.save_vtt(segments, vtt_path)
-        created_files.append(str(vtt_path))
+        if 'vtt' in formats:
+            vtt_path = base_output_path.with_suffix(".vtt")
+            self.format_handler.save_vtt(segments, vtt_path)
+            created_files.append(str(vtt_path))
 
         # Save SRT
-        srt_path = base_output_path.with_suffix(".srt")
-        self.format_handler.save_srt(segments, srt_path)
-        created_files.append(str(srt_path))
+        if 'srt' in formats:
+            srt_path = base_output_path.with_suffix(".srt")
+            self.format_handler.save_srt(segments, srt_path)
+            created_files.append(str(srt_path))
 
         # Save TXT
-        txt_path = base_output_path.with_suffix(".txt")
-        self.format_handler.save_txt(segments, txt_path)
-        created_files.append(str(txt_path))
+        if 'txt' in formats:
+            txt_path = base_output_path.with_suffix(".txt")
+            self.format_handler.save_txt(segments, txt_path)
+            created_files.append(str(txt_path))
 
         # Save CSV
-        csv_path = base_output_path.with_suffix(".csv")
-        self.format_handler.save_csv(segments, csv_path)
-        created_files.append(str(csv_path))
+        if 'csv' in formats:
+            csv_path = base_output_path.with_suffix(".csv")
+            self.format_handler.save_csv(segments, csv_path)
+            created_files.append(str(csv_path))
+
+        # Save TSV
+        if 'tsv' in formats:
+            tsv_path = base_output_path.with_suffix(".tsv")
+            self.format_handler.save_tsv(segments, tsv_path)
+            created_files.append(str(tsv_path))
 
         # Save Word-Level JSON if requested
         if kwargs.get('word_timestamps'):
@@ -756,11 +866,11 @@ class TextifierCore:
         elif ext == '.csv':
             data = self.format_handler.parse_csv(input_path)
             data_type = 'segments'
-        elif ext == '.txt':
+        elif ext in {'.txt', '.md'}:
             data = self.format_handler.parse_txt(input_path)
             data_type = 'lines'
         else:
-            raise ValueError(f"Unsupported file format: {ext}. Supported: .vtt, .srt, .txt, .csv")
+            raise ValueError(f"Unsupported file format: {ext}. Supported: .vtt, .srt, .txt, .csv, .md")
         
         # Translate content
         if data_type == 'segments':

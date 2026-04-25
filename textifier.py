@@ -71,11 +71,16 @@ def main():
     summarize_parser = subparsers.add_parser("summarize", help="Summarize text/subtitle files using LLM")
     summarize_parser.add_argument("input_file", help="Path to input text/subtitle file or folder")
     summarize_parser.add_argument("-f", "--folder", action="store_true", help="Process all text files in the folder")
-    summarize_parser.add_argument("--prompt", default="Please summarize the following transcript concisely.", help="Summarization prompt")
+    summarize_parser.add_argument("--prompt", default="Create a high-value summary with core insights and actionable items.", help="Summarization prompt")
     summarize_parser.add_argument("--provider", choices=['ollama', 'lm_studio', 'gemini', 'claude', 'openai'], default='gemini', help="LLM provider")
     summarize_parser.add_argument("--api-key", help="API Key for cloud providers")
     summarize_parser.add_argument("--model", help="LLM Model name (e.g., gemini-1.5-flash, llama3)")
     summarize_parser.add_argument("--base-url", help="Base URL for local providers (Ollama/LM Studio)")
+    summarize_parser.add_argument("--strategy", choices=['single_pass', 'map_reduce'], default='map_reduce', help="Summarization strategy [default: map_reduce]")
+    summarize_parser.add_argument("--chunk-size", type=int, default=8000, help="Chunk size for Map-Reduce [default: 8000]")
+    summarize_parser.add_argument("--overlap", type=int, default=500, help="Chunk overlap [default: 500]")
+    summarize_parser.add_argument("--temp", type=float, default=0.3, help="LLM Temperature [default: 0.3]")
+    summarize_parser.add_argument("--max-tokens", type=int, default=1500, help="Max output tokens [default: 1500]")
     
     # Pipeline command
     pipeline_parser = subparsers.add_parser("pipeline", help="Run full pipeline: transcribe -> translate -> summarize")
@@ -88,6 +93,9 @@ def main():
     pipeline_parser.add_argument("--provider", default='gemini', help="LLM provider for summarization")
     pipeline_parser.add_argument("--api-key", help="API Key for summarization")
     pipeline_parser.add_argument("--summary-model", help="LLM Model name for summarization")
+    pipeline_parser.add_argument("--strategy", choices=['single_pass', 'map_reduce'], default='map_reduce', help="Summarization strategy")
+    pipeline_parser.add_argument("--temp", type=float, default=0.3, help="LLM Temperature")
+    pipeline_parser.add_argument("--max-tokens", type=int, default=1500, help="Max output tokens")
     
     # Download translation model command
     subparsers.add_parser("download-translation-model", help="Download the mBART translation model")
@@ -134,7 +142,12 @@ def main():
                 'provider': args.provider,
                 'api_key': args.api_key,
                 'model': args.model,
-                'base_url': args.base_url
+                'base_url': args.base_url,
+                'strategy': args.strategy,
+                'chunk_size': args.chunk_size,
+                'chunk_overlap': args.overlap,
+                'temperature': args.temp,
+                'max_tokens': args.max_tokens
             }
             input_path = Path(args.input_file)
             if args.folder:
@@ -172,6 +185,11 @@ def main():
                     out_path = Path(txt_file).with_suffix(".summary.md")
                     with open(out_path, "w", encoding="utf-8") as f:
                         f.write(summary)
+                    
+                    # NEW: Translate the summary if target languages are provided
+                    if args.translate_langs:
+                        for lang in args.translate_langs:
+                            textifier.translate_file(str(out_path), source_lang="en", target_lang=lang, output_dir=args.output_dir)
 
         elif args.command == "download-translation-model":
             textifier.download_translation_model()

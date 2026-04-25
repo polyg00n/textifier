@@ -1,102 +1,77 @@
 # Textifier
 
-Textifier is a high-performance Python application designed for high-quality video/audio transcription and translation. Powered by **faster-whisper** (CTranslate2), it offers significant speedups (4x-10x) over standard Whisper implementations while maintaining a lightweight footprint.
-
-## Key Features
-
-### ✨ New in v2.0.0
-- **Multi-Language Transcription**: 36+ languages supported with auto-detection (English, Spanish, French, Hindi, Gujarati, Japanese, Arabic, Chinese, and many more)
-- **Enhanced Translation**: Expanded from 2 to 40+ languages with bi-directional support (any source → any target)
-- **Multi-Format Output**: Automatically generates VTT, SRT, TXT, CSV, and word-level JSON formats
-- **Intelligent Summarization**: Integrated local (Ollama/LM Studio) and cloud (Gemini/Claude/OpenAI) LLM support for transcripts
-- **VAD Filter**: Built-in Silero Voice Activity Detection to filter noise and prevent hallucinations
-- **Word-Level Timestamps**: Precise timing for every word with detailed metadata export
-- **Stability & Testing**: Comprehensive `pytest` suite and improved startup reliability
-
-### Core Capabilities
-- **Transcription**: Ultra-fast speech-to-text using `faster-whisper` with support for `large-v3-turbo` and `Distil-Whisper`.
-- **Translation**: Accurate multilingual translation using mBART-50 (supports 40+ language pairs).
-- **Core Architecture**: Decoupled, modular design for high maintainability and performance.
-- **Audio Pre-processing**: Efficient audio extraction via FFmpeg pipes (zero intermediate disk writes).
-- **GPU Fallback**: Robust hardware detection with multi-stage fallback (attempts CUDA float16 → int8 → CPU) to ensure stability on all hardware.
-- **Subtitle Editor**: Built-in editor with word-wrap, dynamic height adjustments, and integrated system player for preview.
-- **Model Manager**: Dedicated interface to download, verify, and delete models locally with disk usage reporting.
-- **Summarization**: Sophisticated transcript summaries using local or cloud LLMs with tiered VRAM-based model recommendations.
-- **Transcribe/Translate Tab**: Process entire folders of media, VTT, SRT, TXT, or CSV files in one go.
-- **Pipeline Tab**: Automated, sequential execution of transcription, translation, and summarization in one batch.
-- **Advanced Controls**: Integrated VAD filter, word-level timestamps, and repetition penalties.
+Textifier is a high-performance, professional-grade Python application designed for high-quality video/audio transcription, translation, and intelligent summarization. Powered by **faster-whisper** (CTranslate2), it offers significant speedups (4x-10x) over standard Whisper implementations while maintaining a lightweight footprint and maximum local privacy.
 
 ---
 
-## Installation
+## ✨ Key Features & Capabilities
+
+### 🎙️ World-Class Transcription
+- **Ultra-Fast Engine**: Powered by `faster-whisper` for near-instant results on modern hardware.
+- **Multi-Language Support**: 36+ languages supported with robust auto-detection.
+- **VAD Filter**: Built-in **Silero Voice Activity Detection** to filter noise and silence, preventing model "hallucinations."
+- **Word-Level Timestamps**: Precise timing for every single word with detailed metadata export (`.words.json`).
+- **Repetition Penalty**: Advanced control to prevent the model from getting stuck in loops.
+- **Flexible Models**: Choose from `tiny` to `large-v3-turbo` or `Distil-Whisper`.
+
+### 🌍 Global Translation
+- **mBART-50 Many-to-Many**: Accurate multilingual translation using state-of-the-art neural models.
+- **40+ Languages**: Bi-directional support (any source → any target).
+- **Bi-Language Export**: Simultaneously translate into multiple target languages in a single pass.
+- **Format Support**: Preserves timestamps across VTT, SRT, TXT, CSV, and TSV formats.
+
+### 🧠 Intelligent Summarization
+- **Flexible LLM Routing**: Connect to **Local LLMs** (Ollama, LM Studio) or **Cloud Providers** (Google Gemini, OpenAI, Claude).
+- **Map-Reduce Strategy**: Advanced recursive chunking logic for summarizing hours-long transcripts using small models.
+- **KM Framework Prompts**: Default prompts designed for high-value digests (Core Insights, Actionable Lists, Glossaries).
+- **Advanced Settings**: Full control over Chunk Size, Overlap, Temperature, and Max Output Tokens.
+
+### 🚀 Automation & Workflow
+- **Pipeline Orchestration**: Automated, sequential execution of Transcribe → Translate → Summarize.
+- **Batch Processing**: Handle hundreds of media or text files simultaneously.
+- **Model Manager**: Integrated interface to download, verify, and manage your local model library.
+- **Hardware-Aware**: Automatic detection of CPU, RAM, and GPU/VRAM with tiered model recommendations.
+
+---
+
+## 🛠️ Installation
 
 ### Prerequisites
-
 - **Python 3.8 - 3.12**
-- **FFmpeg**: Essential for high-performance audio extraction.
-- **NVIDIA GPU** (Optional): Highly recommended for GPU acceleration (requires CUDA 12+).
+- **FFmpeg**: Essential for audio extraction.
+- **NVIDIA GPU** (Optional): Highly recommended (requires CUDA 12+).
 
-### Installing FFmpeg
-
-#### Windows
-1. Download from [ffmpeg.org](https://ffmpeg.org/download.html).
-2. Extract and add the `bin` folder to your system **PATH**.
-
-#### Linux (Ubuntu/Debian)
-```bash
-sudo apt update && sudo apt install ffmpeg
-```
-
-### Application Setup
-
-1. **Clone the repository**:
+### Quick Start
+1. **Clone & Setup**:
    ```bash
    git clone https://github.com/polyg00n/textifier.git
    cd textifier
-   ```
-
-2. **Setup virtual environment**:
-   ```bash
    python -m venv .venv
-   # Windows:
-   .venv\Scripts\activate
-   # Linux/macOS:
-   source .venv/bin/activate
-   ```
-
-3. **Install dependencies**:
-   ```bash
+   .venv\Scripts\activate  # Windows
    pip install -r requirements.txt
    ```
 
 ---
 
-## Usage
+## 📖 Usage Guide
 
-### GUI (Recommended)
+### GUI (Graphical Interface)
 ```bash
 python gui_main.py
 ```
 
-#### GUI Tabs:
-- **Transcribe/Translate**: Unified workflow for single files or folders. 
-  - **Transcription**: Select from 36+ languages or use auto-detect
-  - **Translation**: Translate between any of 40+ supported language pairs
-  - **Output**: Automatically generates VTT, SRT, TXT, and CSV formats
-- **Summarize**: Intelligent summaries using flexible LLM routing (local/cloud) and custom prompt management. Supports processing entire folders of text/subtitles.
-- **Pipeline**: Automated, sequential execution of transcription, translation, and summarization in one batch.
-- **Advanced Whisper**: Detailed control over parameters (language, beams, patience, precision, device).
-- **Utilities**: Hardware-aware settings and model management with automated system info detection.
-- **Subtitle Editor**: (Hidden for now) Advanced editor with iterative saving (`_edit01.vtt`) to protect original files.
+- **Transcribe/Translate Tab**: Unified media processing with multiformat selectors.
+- **Summarize Tab**: Turn transcripts into actionable knowledge with Map-Reduce support.
+- **Pipeline Tab**: The "Set and Forget" mode for full documentation packages.
+- **Advanced Whisper**: Fine-tune Beams, Patience, Repetition Penalty, and VAD.
 
 ---
 
 ### Command Line Interface (CLI)
-
-Textifier provides a robust CLI (`textifier.py`) for headless operation and pipeline integration.
+Textifier provides a robust CLI (`textifier.py`) for headless operation and company pipeline automations.
 
 #### 1. Transcribe Media
-Transcribe audio/video files to multiple formats (VTT, SRT, TXT, CSV, JSON).
+Transcribe audio/video files to multiple formats (VTT, SRT, TXT, CSV, TSV, JSON).
 ```bash
 # Single file (auto-detect language, use default large-v3-turbo)
 python textifier.py transcribe "video.mp4"
@@ -125,16 +100,16 @@ python textifier.py translate "subtitles_dir/" --folder -l ja
 ```
 
 #### 3. Summarize Transcripts
-Generate AI summaries using local or cloud LLMs.
+Generate AI summaries using local or cloud LLMs with Map-Reduce support.
 ```bash
 # Summarize using Google Gemini (requires API key)
 python textifier.py summarize "transcript.txt" --provider gemini --api-key YOUR_API_KEY
 
 # Summarize using local Ollama (ensure Ollama is running)
-python textifier.py summarize "meeting.vtt" --provider ollama --model llama3
+python textifier.py summarize "meeting.vtt" --provider ollama --model llama3 --strategy map_reduce
 
-# Batch summarize a folder
-python textifier.py summarize "outputs/" --folder --provider gemini --api-key YOUR_API_KEY
+# Batch summarize a folder with custom chunking
+python textifier.py summarize "outputs/" --folder --provider gemini --api-key YOUR_KEY --chunk-size 4000
 ```
 
 #### 4. Full Pipeline
@@ -146,31 +121,44 @@ python textifier.py pipeline "video.mp4" --translate-langs es --summarize --api-
 
 ---
 
-## Models Used
+## 📦 Models Used
 
 ### Whisper (Transcription)
 - **Engine**: `faster-whisper` (CTranslate2)
 - **Default**: `large-v3-turbo`
 - **Recommended for Speed**: `large-v3-turbo` or `distil-large-v3`
-- **Supported**: Full suite from `tiny` to `large-v3`, including `.en` variants.
-- **Languages**: 36+ languages including English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Chinese, Japanese, Korean, Arabic, Hindi, Gujarati, Tamil, Telugu, Bengali, Urdu, Persian, Thai, Vietnamese, Indonesian, Hebrew, Greek, Czech, Finnish, Romanian, Danish, Hungarian, Tamil, Norwegian, Marathi, Punjabi
+- **Supported**: Full suite from `tiny` to `large-v3`.
+- **Languages**: 36+ languages including English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Chinese, Japanese, Korean, Arabic, Hindi, Gujarati, Tamil, Telugu, Bengali, Urdu, Persian, Thai, Vietnamese, Indonesian, Hebrew, Greek, Czech, Finnish, Romanian, Danish, Hungarian, Norwegian, Marathi, Punjabi.
 
 ### mBART (Translation)
 - **Model**: `mBART Large 50 Many-to-Many MMT`
-- **Languages**: 40+ languages with bi-directional translation support
+- **Languages**: 40+ languages with bi-directional translation support.
 - **Popular Pairs**: 
   - English ↔ French, Spanish, German, Italian, Portuguese, Dutch, Russian
   - English ↔ Hindi, Gujarati, Tamil, Telugu, Bengali, Urdu, Marathi
   - English ↔ Chinese, Japanese, Korean, Arabic, Thai, Vietnamese
-  - **Any to Any**: e.g., Hindi → Gujarati, Spanish → French, Japanese → Korean
+  - **Any to Any**: e.g., Hindi → Gujarati, Spanish → French, Japanese → Korean.
 
 ---
 
-## Troubleshooting
+## 🖥️ Hardware & VRAM Recommendations
 
-- **"float16 compute type" Error**: Textifier now automatically handles this by falling back to `int8` or CPU. If you see this in the logs, it means the app is adapting to your GPU limitations.
+| VRAM | Best For | Recommended LLMs |
+| :--- | :--- | :--- |
+| **24GB+** | High-speed processing / Massive Context | Qwen 3 32B+, Llama 3.1 70B |
+| **12GB** | Professional Workflow | Qwen 2.5 14B, Mistral Nemo 12B |
+| **8GB** | Standard Desktop | Llama 3 8B, Gemma 3 9B |
+| **4GB-6GB** | Entry GPU / Laptops | Phi-4 Mini, Gemma 3 4B-IT |
+| **CPU** | Legacy Hardware | Phi-3 Mini, TinyLlama |
+
+---
+
+## 🛠️ Troubleshooting
+
+- **"float16 compute type" Error**: Textifier automatically handles this by falling back to `int8` or CPU. If you see this in the logs, it means the app is adapting to your GPU limitations.
 - **FFmpeg Error**: Ensure `ffmpeg` is reachable (type `ffmpeg -version` in terminal).
 - **Startup Latency**: Textifier uses lazy loading; it starts instantly and only loads models when transcription begins.
+- **Context Window**: If a local model fails on long files, ensure you are using the **Map-Reduce** strategy with a smaller **Chunk Size**.
 
 ---
 

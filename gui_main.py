@@ -193,8 +193,25 @@ class TextifierApp(tk.Tk):
         self.opt_transcribe_lang.grid(row=1, column=1, padx=5, sticky="w")
         ttk.Label(frm_transcribe, text="(or let Whisper auto-detect)", foreground="gray").grid(row=1, column=2, padx=5, sticky="w")
         
-        # Row 2: Action button
-        ttk.Button(frm_transcribe, text="Transcribe to Text", command=self.start_transcribe).grid(row=2, column=0, columnspan=3, padx=20, pady=10)
+        # Row 2: Output Formats
+        ttk.Label(frm_transcribe, text="Output Formats:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        frm_fmts = ttk.Frame(frm_transcribe)
+        frm_fmts.grid(row=2, column=1, columnspan=2, sticky="w")
+        
+        self.var_out_vtt = tk.BooleanVar(value=True)
+        self.var_out_srt = tk.BooleanVar(value=False)
+        self.var_out_txt = tk.BooleanVar(value=True)
+        self.var_out_csv = tk.BooleanVar(value=False)
+        self.var_out_tsv = tk.BooleanVar(value=False)
+        
+        ttk.Checkbutton(frm_fmts, text="VTT", variable=self.var_out_vtt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_fmts, text="SRT", variable=self.var_out_srt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_fmts, text="TXT", variable=self.var_out_txt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_fmts, text="CSV", variable=self.var_out_csv).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_fmts, text="TSV", variable=self.var_out_tsv).pack(side="left", padx=5)
+        
+        # Row 3: Action button
+        ttk.Button(frm_transcribe, text="Transcribe to Text", command=self.start_transcribe).grid(row=3, column=0, columnspan=3, padx=20, pady=10)
         
         # TRANSLATE Section (converts VTT to other languages)
         frm_translate = ttk.LabelFrame(self.tab_batch, text="Translate (VTT → Other Language)")
@@ -300,15 +317,29 @@ class TextifierApp(tk.Tk):
             self.queue_status(f"Language set to: {lang_display}")
         else:
             self.queue_status("Using auto-detect for language")
+            
+        # Collect formats
+        formats = []
+        if self.var_out_vtt.get(): formats.append("vtt")
+        if self.var_out_srt.get(): formats.append("srt")
+        if self.var_out_txt.get(): formats.append("txt")
+        if self.var_out_csv.get(): formats.append("csv")
+        if self.var_out_tsv.get(): formats.append("tsv")
         
+        if not formats:
+            messagebox.showwarning("Warning", "Please select at least one output format.")
+            return
+
         output_dir = self.get_output_dir()
-        threading.Thread(target=self._run_transcribe, args=(input_path, output_dir, language_code), daemon=True).start()
+        threading.Thread(target=self._run_transcribe, args=(input_path, output_dir, language_code, formats), daemon=True).start()
         
-    def _run_transcribe(self, input_path, output_dir, language=None, **kwargs):
+    def _run_transcribe(self, input_path, output_dir, language=None, formats=None, **kwargs):
         try:
             # Add language to kwargs if specified
             if language is not None:
                 kwargs['language'] = language
+            if formats:
+                kwargs['output_formats'] = formats
             
             if os.path.isdir(input_path):
                 files = [f for f in Path(input_path).glob('*') if f.suffix.lower() in {'.mp4', '.mov', '.avi', '.mkv', '.mp3', '.wav', '.m4a', '.aac'}]
@@ -1054,13 +1085,50 @@ class TextifierApp(tk.Tk):
         scrl_p.config(command=self.txt_prompt.yview)
         
         # Default prompt
-        default_prompt = "Please provide a concise summary of the following transcript. Highlight the key points and any action items."
+        default_prompt = (
+            "You are a Knowledge Management Specialist. Create a high-value summary of this transcript.\n\n"
+            "Structure your response as follows:\n"
+            "1. **Core Summary**: A 2-3 sentence overview.\n"
+            "2. **Key Takeaways**: Bulleted list of the most important points.\n"
+            "3. **Lists**: Extract all lists mentioned. It might be steps in a process, recommendations, or ideas.\n"
+            "4. **Glossary/Terms**: Define any specific jargon or unique terms used."
+        )
         self.txt_prompt.insert("1.0", default_prompt)
         
         frm_prompt_btns = ttk.Frame(frm_prompt)
         frm_prompt_btns.pack(fill="x", padx=5, pady=5)
         ttk.Button(frm_prompt_btns, text="Load Prompt (.md/.txt)", command=self._load_prompt).pack(side="left", padx=5)
         ttk.Button(frm_prompt_btns, text="Save Prompt (.md/.txt)", command=self._save_prompt).pack(side="left", padx=5)
+        
+        # Advanced LLM Options
+        frm_adv_llm = ttk.LabelFrame(self.tab_summarize, text="Advanced LLM Settings")
+        frm_adv_llm.pack(fill="x", padx=10, pady=5)
+        
+        # Row 1: Chunking Strategy & Size
+        ttk.Label(frm_adv_llm, text="Strategy:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.var_llm_strategy = tk.StringVar(value="map_reduce")
+        self.opt_llm_strategy = ttk.Combobox(frm_adv_llm, textvariable=self.var_llm_strategy, 
+                                             values=["map_reduce", "single_pass"], width=12, state="readonly")
+        self.opt_llm_strategy.grid(row=0, column=1, padx=5, sticky="w")
+        
+        ttk.Label(frm_adv_llm, text="Chunk Size:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.var_llm_chunk_size = tk.IntVar(value=8000)
+        ttk.Entry(frm_adv_llm, textvariable=self.var_llm_chunk_size, width=8).grid(row=0, column=3, padx=5, sticky="w")
+        
+        ttk.Label(frm_adv_llm, text="Overlap:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        self.var_llm_overlap = tk.IntVar(value=500)
+        ttk.Entry(frm_adv_llm, textvariable=self.var_llm_overlap, width=8).grid(row=0, column=5, padx=5, sticky="w")
+        
+        # Row 2: Generation Settings
+        ttk.Label(frm_adv_llm, text="Temperature:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.var_llm_temp = tk.DoubleVar(value=0.3)
+        self.sld_temp = ttk.Scale(frm_adv_llm, from_=0.0, to=1.5, variable=self.var_llm_temp, orient="horizontal", length=100)
+        self.sld_temp.grid(row=1, column=1, padx=5, sticky="w")
+        ttk.Label(frm_adv_llm, textvariable=self.var_llm_temp).grid(row=1, column=2, sticky="w")
+        
+        ttk.Label(frm_adv_llm, text="Max Output Tokens:").grid(row=1, column=3, padx=5, pady=5, sticky="w")
+        self.var_llm_max_tokens = tk.IntVar(value=1500)
+        ttk.Entry(frm_adv_llm, textvariable=self.var_llm_max_tokens, width=8).grid(row=1, column=4, padx=5, sticky="w")
         
         # Action Section
         frm_action = ttk.Frame(self.tab_summarize)
@@ -1140,7 +1208,12 @@ class TextifierApp(tk.Tk):
         config = {
             'type': self.var_llm_type.get(),
             'provider': self.var_local_provider.get() if self.var_llm_type.get() == 'local' else None,
-            'model': self.var_sum_model.get()
+            'model': self.var_sum_model.get(),
+            'strategy': self.var_llm_strategy.get(),
+            'chunk_size': self.var_llm_chunk_size.get(),
+            'chunk_overlap': self.var_llm_overlap.get(),
+            'temperature': self.var_llm_temp.get(),
+            'max_tokens': self.var_llm_max_tokens.get()
         }
         
         if config['type'] == 'cloud':
@@ -1248,6 +1321,22 @@ class TextifierApp(tk.Tk):
         self.var_pipe_transcribe = tk.BooleanVar(value=True)
         ttk.Checkbutton(frm_steps, text="Transcribe", variable=self.var_pipe_transcribe).grid(row=0, column=0, sticky="w", padx=10, pady=5)
         
+        # Transcribe formats
+        frm_trans_fmts = ttk.Frame(frm_steps)
+        frm_trans_fmts.grid(row=0, column=1, sticky="w", padx=10)
+        
+        self.var_pipe_vtt = tk.BooleanVar(value=True)
+        self.var_pipe_srt = tk.BooleanVar(value=False)
+        self.var_pipe_txt = tk.BooleanVar(value=True)
+        self.var_pipe_csv = tk.BooleanVar(value=False)
+        self.var_pipe_tsv = tk.BooleanVar(value=False)
+        
+        ttk.Checkbutton(frm_trans_fmts, text="VTT", variable=self.var_pipe_vtt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_trans_fmts, text="SRT", variable=self.var_pipe_srt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_trans_fmts, text="TXT", variable=self.var_pipe_txt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_trans_fmts, text="CSV", variable=self.var_pipe_csv).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_trans_fmts, text="TSV", variable=self.var_pipe_tsv).pack(side="left", padx=5)
+        
         # Translate
         self.var_pipe_translate = tk.BooleanVar(value=False)
         ttk.Checkbutton(frm_steps, text="Translate", variable=self.var_pipe_translate).grid(row=1, column=0, sticky="w", padx=10, pady=5)
@@ -1341,7 +1430,12 @@ class TextifierApp(tk.Tk):
         llm_config = {
             'type': self.var_llm_type.get(),
             'provider': self.var_local_provider.get() if self.var_llm_type.get() == 'local' else None,
-            'model': self.var_sum_model.get()
+            'model': self.var_sum_model.get(),
+            'strategy': self.var_llm_strategy.get(),
+            'chunk_size': self.var_llm_chunk_size.get(),
+            'chunk_overlap': self.var_llm_overlap.get(),
+            'temperature': self.var_llm_temp.get(),
+            'max_tokens': self.var_llm_max_tokens.get()
         }
         if llm_config['type'] == 'cloud':
             for provider, ent in self.llm_cloud_fields.items():
@@ -1356,8 +1450,21 @@ class TextifierApp(tk.Tk):
         
         whisper_kwargs = self.get_advanced_options()
         
+        # Collect Transcribe formats
+        trans_fmts = []
+        if self.var_pipe_vtt.get(): trans_fmts.append("vtt")
+        if self.var_pipe_srt.get(): trans_fmts.append("srt")
+        if self.var_pipe_txt.get(): trans_fmts.append("txt")
+        if self.var_pipe_csv.get(): trans_fmts.append("csv")
+        if self.var_pipe_tsv.get(): trans_fmts.append("tsv")
+        
+        if self.var_pipe_transcribe.get() and not trans_fmts:
+            messagebox.showwarning("Warning", "Please select at least one transcription output format.")
+            return
+
         config = {
             'transcribe': self.var_pipe_transcribe.get(),
+            'transcribe_fmts': trans_fmts,
             'translate': self.var_pipe_translate.get(),
             'translate_exts': exts,
             'translate_langs': target_codes,
@@ -1403,6 +1510,8 @@ class TextifierApp(tk.Tk):
                         self.core.whisper_model_name = model_name
                         self.core.whisper_model = None
                     try:
+                        # Pass requested formats
+                        config['whisper_kwargs']['output_formats'] = config['transcribe_fmts']
                         self.core.transcribe_media(str(file_path), str(out_dir), **config['whisper_kwargs'])
                         self.log_pipe(f"Transcription finished.")
                     except Exception as e:
@@ -1433,6 +1542,15 @@ class TextifierApp(tk.Tk):
                             with open(sum_file, "w", encoding="utf-8") as f:
                                 f.write(result)
                             self.log_pipe(f"Summary saved to {sum_file.name}")
+                            
+                            # NEW: Also translate the summary if translation is enabled
+                            if config['translate'] and config['translate_langs']:
+                                for lang_name, lang_code in config['translate_langs']:
+                                    self.log_pipe(f"Translating summary to {lang_name}...")
+                                    try:
+                                        self.core.translate_file(str(sum_file), source_lang=config['translate_source_code'], target_lang=lang_code, output_dir=str(out_dir))
+                                    except Exception as e:
+                                        self.log_pipe(f"Summary translation error: {e}")
                         except Exception as e:
                             self.log_pipe(f"Summarize error: {e}")
                             
