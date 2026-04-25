@@ -1,5 +1,6 @@
 
 import os
+import json
 import logging
 from pathlib import Path
 import urllib.request
@@ -8,6 +9,8 @@ import time
 import subprocess
 import numpy as np
 import csv
+import json
+import requests
 
 # Confgure logger
 # import whisper
@@ -235,6 +238,8 @@ class Transcriber:
         self.stop_requested = False
         audio = self.load_audio(input_path)
         
+        if 'vad_filter' not in kwargs:
+            kwargs['vad_filter'] = True
         segments, info = self.whisper_model.transcribe(audio, **kwargs)
         self._update_status(f"Detected language: {info.language} ({info.language_probability:.2f})")
         
@@ -475,8 +480,150 @@ class CallbackStream:
     def flush(self):
         pass
 
+class Summarizer:
+    """Handles text summarization via local or cloud LLMs."""
+    def __init__(self, status_callback=None):
+        self.status_callback = status_callback
+
+    def _update_status(self, message):
+        if self.status_callback:
+            self.status_callback(message)
+
+    def scan_local_models(self, models_dir):
+        """Scans a directory for .gguf files and Ollama manifests."""
+        models = []
+        if not models_dir: return models
+        path = Path(models_dir)
+        if not path.exists():
+            return models
+        
+        # 1. Standalone GGUF files
+        for file in path.rglob("*.gguf"):
+            models.append(file.name)
+            
+        # 2. Ollama Manifests (registry.ollama.ai/library/model/tag)
+        # We look for the 'manifests' folder specifically
+        manifest_root = None
+        if path.name == "manifests":
+            manifest_root = path
+        else:
+            # Check if it's a child
+            manifest_root = next(path.rglob("manifests"), None)
+            
+        if manifest_root:
+            # Depth-first walk to find leaf files in library/
+            library_path = manifest_root / "registry.ollama.ai" / "library"
+            if library_path.exists():
+                for model_folder in library_path.iterdir():
+                    if model_folder.is_dir():
+                        # Tags are files in this folder (e.g., 'latest')
+                        for tag_file in model_folder.iterdir():
+                            if tag_file.is_file():
+                                models.append(f"{model_folder.name}:{tag_file.name}")
+                                
+        return sorted(list(set(models)))
+
+    def check_provider_status(self, provider):
+        """Check if Ollama or LM Studio is running."""
+        try:
+            if provider == 'ollama':
+                resp = requests.get("http://localhost:11434/api/tags", timeout=2)
+                return resp.status_code == 200
+            elif provider == 'lm_studio' or provider == 'lmstudio':
+                resp = requests.get("http://localhost:1234/v1/models", timeout=2)
+                return resp.status_code == 200
+        except:
+            return False
+        return False
+
+    def launch_provider(self, provider):
+        """Attempt to launch the provider (Windows)."""
+        if provider == 'ollama':
+            path = os.path.join(os.environ.get('LOCALAPPDATA', ''), r"Programs\Ollama\ollama app.exe")
+            if os.path.exists(path):
+                subprocess.Popen([path], start_new_session=True, creationflags=0x00000008)
+                return True
+        elif provider == 'lm_studio' or provider == 'lmstudio':
+            # Common paths for LM Studio
+            paths = [
+                r"C:\Program Files\LM Studio\LM Studio.exe",
+                r"E:\Program Files\LM Studio\LM Studio.exe",
+                os.path.join(os.environ.get('LOCALAPPDATA', ''), r"Programs\LM-Studio\LM Studio.exe"), # Note: some use LM-Studio
+                os.path.join(os.environ.get('LOCALAPPDATA', ''), r"Programs\LM Studio\LM Studio.exe"),
+            ]
+            for p in paths:
+                if os.path.exists(p):
+                    subprocess.Popen([p], start_new_session=True, creationflags=0x00000008)
+                    return True
+        return False
+
+    def summarize(self, text, prompt, provider_config):
+        """
+        provider_config: {
+            'type': 'local'|'cloud',
+            'provider': 'ollama'|'lm_studio'|'gemini'|'claude'|'openai',
+            'api_key': '...',
+            'base_url': '...' (for local)
+        }
+        """
+        llm_type = provider_config.get('type')
+        provider = provider_config.get('provider')
+        
+        full_prompt = f"{prompt}\n\nTranscript:\n{text}"
+        
+        if llm_type == 'local':
+            return self._summarize_local(full_prompt, provider, provider_config.get('base_url'), model=provider_config.get('model'))
+        else:
+            return self._summarize_cloud(full_prompt, provider, provider_config.get('api_key'), model=provider_config.get('model'))
+
+    def _summarize_local(self, prompt, provider, base_url, model=None):
+        if not base_url:
+            # Defaults
+            base_url = "http://localhost:11434/api/generate" if provider == 'ollama' else "http://localhost:1234/v1/chat/completions"
+        
+        try:
+            if provider == 'ollama':
+                payload = {
+                    "model": model if model else "llama3",
+                    "prompt": prompt,
+                    "stream": False
+                }
+                resp = requests.post(base_url, json=payload, timeout=240)
+                data = resp.json()
+                return data.get("response", "No response from Ollama")
+            else: # LM Studio (OpenAI compatible)
+                payload = {
+                    "model": model if model else "unspecified",
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+                resp = requests.post(base_url, json=payload, timeout=240)
+                data = resp.json()
+                return data['choices'][0]['message']['content']
+        except Exception as e:
+            return f"Local LLM Error: {e}"
+
+    def _summarize_cloud(self, prompt, provider, api_key, model=None):
+        if not api_key:
+            return "Error: No API key provided for cloud LLM."
+        
+        try:
+            if provider == 'gemini':
+                model_name = model if model else "gemini-1.5-flash"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                resp = requests.post(url, json=payload)
+                data = resp.json()
+                if 'candidates' in data and data['candidates']:
+                    return data['candidates'][0]['content']['parts'][0]['text']
+                return f"Gemini Error: {json.dumps(data)}"
+            
+            # Implementations for Claude and OpenAI...
+            return f"Cloud provider '{provider}' implementation pending."
+        except Exception as e:
+            return f"Cloud LLM Error: {e}"
+
 class TextifierCore:
-    def __init__(self, load_translation_model=False, whisper_model_name="large", status_callback=None):
+    def __init__(self, load_translation_model=False, whisper_model_name="large-v3-turbo", status_callback=None):
         self.status_callback = status_callback
         logging.info("Initializing TextifierCore")
         
@@ -484,6 +631,7 @@ class TextifierCore:
         self.transcriber = Transcriber(self.model_manager, status_callback=status_callback)
         self.translator = Translator(self.model_manager, status_callback=status_callback)
         self.format_handler = FormatHandler()
+        self.summarizer = Summarizer(status_callback) # Added summarizer
         
         self.whisper_model_name = whisper_model_name
         
@@ -560,6 +708,31 @@ class TextifierCore:
         csv_path = base_output_path.with_suffix(".csv")
         self.format_handler.save_csv(segments, csv_path)
         created_files.append(str(csv_path))
+
+        # Save Word-Level JSON if requested
+        if kwargs.get('word_timestamps'):
+            json_path = base_output_path.with_suffix(".words.json")
+            word_data = []
+            for s in segments:
+                seg_dict = {
+                    "start": s.start,
+                    "end": s.end,
+                    "text": s.text.strip(),
+                    "words": []
+                }
+                if hasattr(s, 'words') and s.words:
+                    for w in s.words:
+                        seg_dict["words"].append({
+                            "start": w.start,
+                            "end": w.end,
+                            "word": w.word,
+                            "probability": w.probability
+                        })
+                word_data.append(seg_dict)
+            
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(word_data, f, indent=4, ensure_ascii=False)
+            created_files.append(str(json_path))
             
         return created_files
 

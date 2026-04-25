@@ -1,0 +1,38 @@
+Instead of typing in the chat let's manage your task list here.
+Always refer to  CONTEXT.md to understand the overall goals and protocols.
+
+This Task List might be updated while you are doing a task, please check here for updates.
+
+
+@beautifulMention@beautifulMention@beautifulMention@beautifulMention 
+refer to D:\Projects\secondBrain\utilities for local llm information
+
+[] create a hidden folder for Antigravity that will be ignored by git, and will contain the following files:
+-CONTEXT.md
+-changes.txt
+
+[]1. Investigate how we can do speaker diarization on prem with a free approach.  create
+Notes:
+
+[]2. Add the ability to translate to two languages. (dropdowns for each with an 'enable' box for the second language)  This makes it faster to create translations for French and Hindi without a lot of file management.
+Notes:
+
+[]3. Add to the utilities tab: 
+
+-SECTION:Select 'local llm' or 'cloud llm' 
+-SECTION: select ollama or lm studio (User must have it installed and running on their own)
+-field for the user to enter the directory for their own folder containing ai models.
+-SECTION: or opt for a cloud based llm (Gemini, Claude, ChatGPT), enabling this section shows the necessary text fields for the user to authenticate for that service
+-Using text boxes, make it very clear to the user which model is going to do each part of the process, 
+-SECTIONL: Model Recommendations (BUTTON) Using a text box, list the relevant specs of the user's computer, like VRAM. Based on this info recommend models for the summarization task
+
+Notes: 
+
+[]4. Add a 'summarize' tab to the app that does the following:
+-Allow user to keep the input file or folder from the transcribe tab, or select their own
+- Uses the information we set in the utilities tab to complete the summarize task and save it to a markdown file in the same folder as the output file set in the transcribe/translate tab
+-have a big text field to edit the prompt that the summarize process will use
+-have a button for the user to save the current prompt to a md file, load a md file to use as the prompt (in the same folder as the output file)
+-Use the same text logging technique from the transcribe/translate tab to give the user information about the progress of the task.  Include the output of the thinking process because it's fun to read.
+
+Notes: 

@@ -5,6 +5,47 @@ All notable changes to Textifier will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-03-16
+
+### 🎉 Major Features
+
+#### Intelligent Summarization Engine
+- **Added**: New **Summarize** tab for generating intelligent transcript summaries.
+- **Providers**: Robust routing for both **Local LLMs** (Ollama, LM Studio) and **Cloud LLMs** (Google Gemini, OpenAI, Claude).
+- **Automation**: Automated "Auto-Start" detection for local providers.
+- **Hardware-Aware**: New **Model Recommendation** engine that suggests optimal models based on the user's detected VRAM (Tiered: 4GB to 24GB+).
+- **Prompt Management**: Integrated system to save, load, and edit custom summarization prompts.
+
+#### Advanced Whisper Capabilities
+- **Added**: **VAD (Voice Activity Detection)** Filter integration (Silero) to automatically remove non-speech segments and prevent hallucinations.
+- **Added**: **Word-Level Timestamps** support, allowing for precise timing metadata exported as `.words.json`.
+- **Added**: **Repetition Penalty** control to prevent the model from getting stuck in loops.
+- **Changed**: Default Whisper model upgraded to `large-v3-turbo` for superior speed/accuracy ratio.
+- **Optimized**: New default settings: VAD ON, Word-Timestamps ON, Repetition Penalty 1.1.
+
+#### Dual-Language Translation
+- **Added**: Support for translating to **two target languages** simultaneously in the Batch Processor.
+- **UI**: Added a second target language dropdown with an enable/disable toggle.
+
+### ✨ Enhancements
+
+#### UI & UX
+- **Renamed**: "Settings" tab renamed to **Utilities** to better reflect its hardware-aware nature.
+- **Improved**: Entire application UI is now scrollable (using canvases) to handle long model lists and varying window sizes.
+- **Improved**: Added dedicated scrollbars to all log windows, prompt fields, and system info boxes.
+- **Added**: System Information panel detecting CPU, RAM, and GPU/VRAM specs for better model selection.
+
+#### Architecture
+- **Stability**: Resolved critical startup race conditions (`AttributeError`) and geometry manager conflicts.
+- **Performance**: Improved lazy loading of models to maintain instant application startup.
+
+### 🧪 Testing Infrastructure
+- **Added**: Full **pytest** suite in `tests/` directory.
+- **Coverage**: Core logic (parsers, model scanning, LLM routing) and UI state transitions (provider toggles, refreshes).
+- **Quality**: The test suite now automatically verifies VTT/SRT/CSV extraction and JSON word-level output.
+
+---
+
 ## [2.0.0] - 2026-01-25
 
 ### 🎉 Major Features

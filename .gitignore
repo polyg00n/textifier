@@ -75,3 +75,6 @@ build/
 
 # OS specific files
 Thumbs.db 
+
+# Antigravity context
+.antigravity/
