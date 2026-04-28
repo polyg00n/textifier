@@ -767,8 +767,8 @@ class TextifierCore:
         # CRITICAL FIX FOR GUI COMPATIBILITY:
         # The GUI passes 'output_format' in kwargs, but faster-whisper will crash
         # if it receives an unknown argument. We remove it here.
-        # We ignore the requested format and simply output ALL formats.
         _ = kwargs.pop('output_format', None)
+        output_formats = kwargs.pop('output_formats', ['vtt', 'srt', 'txt', 'csv', 'tsv'])
         
         # IMPLEMENTATION OF PUNCTUATION FIX
         # If no initial prompt is provided, we supply a standard one to force punctuation/capitalization style.
@@ -783,7 +783,7 @@ class TextifierCore:
         if not result: return None
         segments, info = result
         
-        formats = kwargs.get('output_formats', ['vtt', 'srt', 'txt', 'csv', 'tsv'])
+        formats = output_formats
         self._update_status(f"Writing formats: {', '.join(formats)}...")
         
         base_output_path = (Path(output_dir) if output_dir else input_path.parent) / input_path.stem
