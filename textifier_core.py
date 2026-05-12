@@ -880,6 +880,15 @@ class TextifierCore:
     def transcribe_media(self, input_path, output_dir=None, **kwargs):
         input_path = self._normalize_path(input_path)
         
+        # EXTRACT AUDIO IF NEEDED
+        # If the user provides a video file to the Transcribe/Batch tab, explicitly
+        # save the .mp3 first before handing it to Whisper.
+        audio_only_exts = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
+        if input_path.suffix.lower() not in audio_only_exts:
+            extracted_path = self.extract_audio(str(input_path), output_dir)
+            if extracted_path:
+                input_path = Path(extracted_path)
+        
         # CRITICAL FIX FOR GUI COMPATIBILITY:
         # The GUI passes 'output_format' in kwargs, but faster-whisper will crash
         # if it receives an unknown argument. We remove it here.
