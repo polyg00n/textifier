@@ -7,6 +7,7 @@ Textifier is a unified, high-performance toolkit for converting media into actio
 
 ### 1. Core Engine (`textifier_core.py`)
 - **Transcription**: Implements `faster-whisper` with a robust fallback system (CUDA float16 → int8 → CPU). It includes Silero VAD for audio cleaning and a specialized `FormatHandler` for VTT, SRT, TXT, CSV, TSV, and JSON output.
+- **Audio Extraction**: Explicitly handles audio stripping from video media, saving optimized 192kbps MP3s for persistent storage and transcription efficiency.
 - **Subtitle Re-Segmentation**: A post-processing step (`resegment_for_subtitles`) that uses word-level timestamps to split Whisper's variable-length segments into short **2-4 second subtitle cues**, ensuring subtitles display correctly in video players. Uses the lightweight `SubtitleSegment` class for output compatibility.
 - **Translation**: Uses `mBART-50` with bi-directional support for 40+ languages.
 - **Summarization**: A flexible dispatcher supporting local (Ollama/LM Studio) and cloud (Gemini/OpenAI/Claude) providers.
@@ -30,6 +31,7 @@ Exposes the full power of the core engine for headless automation. Supports `tra
 - **v2.0**: Focused on multi-language support (mBART-50) and punctuation stability.
 - **v2.1**: Introduced the **Summarization Engine**, **Pipeline Tab**, **VAD Filter**, **Word-Level Timestamps**, and **Map-Reduce** context management.
 - **v2.2**: Added **Subtitle Re-Segmentation** for short timecodes (2-4s cues), achieved **full GUI format parity** across all tabs, and brought the **CLI to full parity** with all Advanced Whisper options.
+- **v2.3**: Restructured **Pipeline Orchestration** to use a phased batch sequence: Extract -> Transcribe -> Summarize -> Translate. Added explicit **Audio Extraction** to MP3.
 
 ## 🛠️ Development Standards
 - **Lazy Loading**: Models must only load when explicitly called to keep startup times low.

@@ -832,6 +832,51 @@ class TextifierCore:
     def stop_requested(self, value):
         self.transcriber.stop_requested = value
 
+    def extract_audio(self, input_path, output_dir=None):
+        """Extract audio from a media file and save as .mp3.
+        
+        Args:
+            input_path: Path to the source media file.
+            output_dir: Directory to save the .mp3 file. Defaults to same folder as source.
+            
+        Returns:
+            Path to the created .mp3 file, or None on failure.
+        """
+        input_path = self._normalize_path(input_path)
+        out_dir = Path(output_dir) if output_dir else input_path.parent
+        mp3_path = out_dir / f"{input_path.stem}.mp3"
+        
+        # Skip if mp3 already exists (avoid re-extracting on re-runs)
+        if mp3_path.exists():
+            self._update_status(f"Audio already exists: {mp3_path.name}")
+            return str(mp3_path)
+        
+        self._update_status(f"Extracting audio: {input_path.name} -> {mp3_path.name}")
+        cmd = [
+            "ffmpeg",
+            "-v", "quiet",
+            "-i", str(input_path),
+            "-vn",
+            "-acodec", "libmp3lame",
+            "-ab", "192k",
+            "-ar", "16000",
+            "-ac", "1",
+            str(mp3_path)
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                self._update_status(f"FFmpeg error: {result.stderr}")
+                return None
+            self._update_status(f"Audio saved: {mp3_path.name}")
+            return str(mp3_path)
+        except FileNotFoundError:
+            self._update_status("Error: FFmpeg not found. Please install FFmpeg.")
+            return None
+        except Exception as e:
+            self._update_status(f"Audio extraction error: {e}")
+            return None
+
     def transcribe_media(self, input_path, output_dir=None, **kwargs):
         input_path = self._normalize_path(input_path)
         

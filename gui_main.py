@@ -1507,80 +1507,135 @@ class TextifierApp(tk.Tk):
 
     def _run_pipeline(self, input_path, config):
         try:
-            files_to_process = []
-            if os.path.isdir(input_path):
-                files_to_process = [f for f in Path(input_path).glob('*') if f.is_file()]
-            else:
-                files_to_process = [Path(input_path)]
-                
-            media_exts = {'.mp4', '.mov', '.avi', '.mkv', '.mp3', '.wav', '.m4a', '.aac'}
+            # Discover media files
+            media_exts = {'.mp4', '.mov', '.avi', '.mkv', '.wmv', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
+            audio_only_exts = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
             
-            for file_path in files_to_process:
-                # If Transcribe is not checked, we skip media files processing and only process text/subtitle files
-                if not config['transcribe'] and file_path.suffix.lower() in media_exts:
-                    continue
+            if os.path.isdir(input_path):
+                all_files = [f for f in Path(input_path).glob('*') if f.is_file()]
+            else:
+                all_files = [Path(input_path)]
+            
+            media_files = [f for f in all_files if f.suffix.lower() in media_exts]
+            
+            if config['transcribe'] and not media_files:
+                self.log_pipe("No media files found to process.")
+                return
+            
+            out_dir_str = config['output_dir']
+            
+            # ================================================================
+            # PHASE 1: Extract audio from all video files → save as .mp3
+            # ================================================================
+            if config['transcribe']:
+                video_files = [f for f in media_files if f.suffix.lower() not in audio_only_exts]
+                audio_files = [f for f in media_files if f.suffix.lower() in audio_only_exts]
                 
-                # If we're only translating/summarizing, we only care about text/subtitle files, or files just generated
-                is_media = file_path.suffix.lower() in media_exts
-                base_stem = file_path.stem
-                out_dir = Path(config['output_dir']) if config['output_dir'] else file_path.parent
+                if video_files:
+                    self.log_pipe(f"\n=== PHASE 1: Extracting audio from {len(video_files)} video(s) ===")
+                    extracted_audio = []
+                    for i, vf in enumerate(video_files, 1):
+                        self.log_pipe(f"[{i}/{len(video_files)}] {vf.name}")
+                        try:
+                            mp3_path = self.core.extract_audio(str(vf))
+                            if mp3_path:
+                                extracted_audio.append(Path(mp3_path))
+                            else:
+                                self.log_pipe(f"  Failed to extract audio from {vf.name}")
+                        except Exception as e:
+                            self.log_pipe(f"  Extraction error: {e}")
+                    
+                    # Combine: extracted mp3s + original audio-only files
+                    all_audio = extracted_audio + audio_files
+                else:
+                    all_audio = audio_files
+                    self.log_pipe(f"\n=== PHASE 1: Skipped (all {len(audio_files)} file(s) are already audio) ===")
                 
-                if config['transcribe'] or not is_media:
-                    self.log_pipe(f"\n--- Processing {file_path.name} ---")
+                self.log_pipe(f"Audio files ready: {len(all_audio)}")
+            
+            # ================================================================
+            # PHASE 2: Transcribe all audio files
+            # ================================================================
+            transcribed_stems = []  # Track stems for downstream phases
+            
+            if config['transcribe'] and all_audio:
+                self.log_pipe(f"\n=== PHASE 2: Transcribing {len(all_audio)} file(s) ===")
                 
-                # 1. Transcribe
-                if config['transcribe'] and is_media:
-                    self.log_pipe(f"Transcribing...")
-                    model_name = self.var_model.get()
-                    if self.core.whisper_model_name != model_name:
-                        self.core.whisper_model_name = model_name
-                        self.core.whisper_model = None
+                model_name = self.var_model.get()
+                if self.core.whisper_model_name != model_name:
+                    self.core.whisper_model_name = model_name
+                    self.core.whisper_model = None
+                
+                for i, af in enumerate(all_audio, 1):
+                    self.log_pipe(f"[{i}/{len(all_audio)}] Transcribing {af.name}...")
                     try:
-                        # Pass requested formats
                         whisper_args = {**config['whisper_kwargs'], 'output_formats': config['transcribe_fmts']}
-                        self.core.transcribe_media(str(file_path), str(out_dir), **whisper_args)
-                        self.log_pipe(f"Transcription finished.")
+                        out_dir = Path(out_dir_str) if out_dir_str else af.parent
+                        self.core.transcribe_media(str(af), str(out_dir), **whisper_args)
+                        # Use the original video stem (not the .mp3 stem) for downstream lookups
+                        transcribed_stems.append((af.stem, out_dir))
+                        self.log_pipe(f"  Transcription complete.")
                     except Exception as e:
-                        self.log_pipe(f"Transcription error: {e}")
-                        
-                # 2. Translate
-                if config['translate'] and config['translate_langs']:
-                    for ext in config['translate_exts']:
-                        target_file = out_dir / f"{base_stem}{ext}"
-                        if target_file.exists():
-                            for lang_name, lang_code in config['translate_langs']:
-                                self.log_pipe(f"Translating {ext} to {lang_name}...")
-                                try:
-                                    self.core.translate_file(str(target_file), source_lang=config['translate_source_code'], target_lang=lang_code, output_dir=str(out_dir))
-                                except Exception as e:
-                                    self.log_pipe(f"Translation error: {e}")
-                                
-                # 3. Summarize
-                if config['summarize']:
-                    target_txt = out_dir / f"{base_stem}.txt"
+                        self.log_pipe(f"  Transcription error: {e}")
+            
+            # ================================================================
+            # PHASE 3: Summarize all transcriptions (if selected)
+            # ================================================================
+            if config['summarize'] and transcribed_stems:
+                self.log_pipe(f"\n=== PHASE 3: Summarizing {len(transcribed_stems)} transcript(s) ===")
+                
+                for i, (stem, out_dir) in enumerate(transcribed_stems, 1):
+                    target_txt = out_dir / f"{stem}.txt"
                     if target_txt.exists():
-                        self.log_pipe(f"Summarizing {target_txt.name}...")
+                        self.log_pipe(f"[{i}/{len(transcribed_stems)}] Summarizing {target_txt.name}...")
                         try:
                             with open(target_txt, "r", encoding="utf-8") as f:
                                 content = f.read()
                             result = self.core.summarizer.summarize(content, config['summary_prompt'], config['llm_config'])
-                            sum_file = out_dir / f"{base_stem}.summary.md"
+                            sum_file = out_dir / f"{stem}.summary.md"
                             with open(sum_file, "w", encoding="utf-8") as f:
                                 f.write(result)
-                            self.log_pipe(f"Summary saved to {sum_file.name}")
-                            
-                            # NEW: Also translate the summary if translation is enabled
-                            if config['translate'] and config['translate_langs']:
-                                for lang_name, lang_code in config['translate_langs']:
-                                    self.log_pipe(f"Translating summary to {lang_name}...")
-                                    try:
-                                        self.core.translate_file(str(sum_file), source_lang=config['translate_source_code'], target_lang=lang_code, output_dir=str(out_dir))
-                                    except Exception as e:
-                                        self.log_pipe(f"Summary translation error: {e}")
+                            self.log_pipe(f"  Summary saved: {sum_file.name}")
                         except Exception as e:
-                            self.log_pipe(f"Summarize error: {e}")
+                            self.log_pipe(f"  Summarize error: {e}")
+                    else:
+                        self.log_pipe(f"[{i}/{len(transcribed_stems)}] No .txt found for {stem}, skipping summary.")
+            elif config['summarize']:
+                self.log_pipe(f"\n=== PHASE 3: Skipped (no transcriptions to summarize) ===")
+            
+            # ================================================================
+            # PHASE 4: Translate all outputs (if selected)
+            # ================================================================
+            if config['translate'] and config['translate_langs'] and transcribed_stems:
+                total_langs = len(config['translate_langs'])
+                self.log_pipe(f"\n=== PHASE 4: Translating to {total_langs} language(s) ===")
+                
+                for lang_name, lang_code in config['translate_langs']:
+                    self.log_pipe(f"\n--- Translating to {lang_name} ---")
+                    
+                    for stem, out_dir in transcribed_stems:
+                        # Translate each requested file extension
+                        for ext in config['translate_exts']:
+                            target_file = out_dir / f"{stem}{ext}"
+                            if target_file.exists():
+                                self.log_pipe(f"  {target_file.name} -> {lang_name}...")
+                                try:
+                                    self.core.translate_file(str(target_file), source_lang=config['translate_source_code'], target_lang=lang_code, output_dir=str(out_dir))
+                                except Exception as e:
+                                    self.log_pipe(f"  Translation error: {e}")
+                        
+                        # Also translate the summary if it exists
+                        sum_file = out_dir / f"{stem}.summary.md"
+                        if sum_file.exists():
+                            self.log_pipe(f"  {sum_file.name} -> {lang_name}...")
+                            try:
+                                self.core.translate_file(str(sum_file), source_lang=config['translate_source_code'], target_lang=lang_code, output_dir=str(out_dir))
+                            except Exception as e:
+                                self.log_pipe(f"  Summary translation error: {e}")
+            elif config['translate']:
+                self.log_pipe(f"\n=== PHASE 4: Skipped (no files to translate) ===")
                             
-            self.log_pipe("\nPipeline finished successfully!")
+            self.log_pipe("\n=== Pipeline finished successfully! ===")
         except Exception as e:
             self.log_pipe(f"\nPipeline encountered a critical error: {e}")
 

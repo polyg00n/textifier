@@ -28,7 +28,7 @@ Textifier is a high-performance, professional-grade Python application designed 
 - **Advanced Settings**: Full control over Chunk Size, Overlap, Temperature, and Max Output Tokens.
 
 ### 🚀 Automation & Workflow
-- **Pipeline Orchestration**: Automated, sequential execution of Transcribe → Translate → Summarize.
+- **Pipeline Orchestration**: Automated, sequential execution using a phased batch sequence (Extract Audio → Transcribe → Summarize → Translate).
 - **Batch Processing**: Handle hundreds of media or text files simultaneously.
 - **Model Manager**: Integrated interface to download, verify, and manage your local model library.
 - **Hardware-Aware**: Automatic detection of CPU, RAM, and GPU/VRAM with tiered model recommendations.
@@ -63,7 +63,7 @@ python gui_main.py
 
 - **Transcribe/Translate Tab**: Unified media processing with multiformat selectors.
 - **Summarize Tab**: Turn transcripts into actionable knowledge with Map-Reduce support.
-- **Pipeline Tab**: The "Set and Forget" mode for full documentation packages.
+- **Pipeline Tab**: The "Set and Forget" mode for full documentation packages. Processes batches in phases: Extract all audio first, then transcribe, then summarize, and finally translate.
 - **Advanced Whisper**: Fine-tune Beams, Patience, Repetition Penalty, VAD, and multi-format output selection.
 
 ---

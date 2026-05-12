@@ -229,10 +229,11 @@ def main():
 
             # Determine files to process
             input_path = Path(args.input_file)
-            video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
+            media_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
+            audio_only_exts = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
             
             if args.folder:
-                media_files = [f for f in input_path.glob('*') if f.suffix.lower() in video_extensions]
+                media_files = [f for f in input_path.glob('*') if f.suffix.lower() in media_extensions]
                 if not media_files:
                     print(f"[!] No media files found in {input_path}")
                     return
@@ -240,50 +241,108 @@ def main():
             else:
                 media_files = [input_path]
 
-            for i, media_file in enumerate(media_files, 1):
+            # ============================================================
+            # PHASE 1: Extract audio from all video files -> save as .mp3
+            # ============================================================
+            video_files = [f for f in media_files if f.suffix.lower() not in audio_only_exts]
+            audio_files = [f for f in media_files if f.suffix.lower() in audio_only_exts]
+            
+            if video_files:
                 print(f"\n{'='*50}")
-                print(f"[*] Pipeline {i}/{len(media_files)}: {media_file.name}")
+                print(f"[*] PHASE 1: Extracting audio from {len(video_files)} video(s)")
+                print(f"{'='*50}")
+                extracted_audio = []
+                for i, vf in enumerate(video_files, 1):
+                    print(f"[{i}/{len(video_files)}] {vf.name}")
+                    mp3_path = textifier.core.extract_audio(str(vf))
+                    if mp3_path:
+                        extracted_audio.append(Path(mp3_path))
+                    else:
+                        print(f"  [!] Failed to extract audio from {vf.name}")
+                all_audio = extracted_audio + audio_files
+            else:
+                all_audio = audio_files
+                print(f"\n[*] PHASE 1: Skipped (all {len(audio_files)} file(s) are already audio)")
+            
+            print(f"[*] Audio files ready: {len(all_audio)}")
+
+            # ============================================================
+            # PHASE 2: Transcribe all audio files
+            # ============================================================
+            transcribed = []  # List of (stem, output_dir) for downstream phases
+            
+            if all_audio:
+                print(f"\n{'='*50}")
+                print(f"[*] PHASE 2: Transcribing {len(all_audio)} file(s)")
                 print(f"{'='*50}")
                 
-                # 1. Transcribe
-                trans_files = textifier.transcribe_media(str(media_file), output_dir=args.output_dir, **whisper_kwargs)
-                if not trans_files:
-                    print(f"[!] Transcription failed for {media_file.name}, skipping.")
-                    continue
+                for i, af in enumerate(all_audio, 1):
+                    print(f"\n[{i}/{len(all_audio)}] Transcribing {af.name}...")
+                    out_dir = Path(args.output_dir) if args.output_dir else af.parent
+                    trans_files = textifier.transcribe_media(str(af), output_dir=str(out_dir), **whisper_kwargs)
+                    if trans_files:
+                        transcribed.append((af.stem, out_dir, trans_files))
+                    else:
+                        print(f"  [!] Transcription failed for {af.name}")
+            
+            # ============================================================
+            # PHASE 3: Summarize all transcriptions (if requested)
+            # ============================================================
+            if args.summarize and transcribed:
+                print(f"\n{'='*50}")
+                print(f"[*] PHASE 3: Summarizing {len(transcribed)} transcript(s)")
+                print(f"{'='*50}")
                 
-                # 2. Translate
-                if args.translate_langs:
-                    # Find all translatable files from transcription output
-                    translatable_exts = {'.vtt', '.srt', '.txt', '.csv'}
-                    for trans_file in trans_files:
-                        if Path(trans_file).suffix.lower() in translatable_exts:
-                            for lang in args.translate_langs:
-                                print(f"[*] Translating {Path(trans_file).name} to {lang}...")
-                                textifier.translate_file(trans_file, source_lang=args.source_lang, target_lang=lang, output_dir=args.output_dir)
+                sum_config = {
+                    'type': 'cloud' if args.provider in ['gemini', 'claude', 'openai'] else 'local',
+                    'provider': args.provider,
+                    'api_key': args.api_key,
+                    'model': args.summary_model,
+                    'strategy': args.strategy,
+                    'temperature': args.summary_temp,
+                    'max_tokens': args.summary_max_tokens,
+                }
                 
-                # 3. Summarize
-                if args.summarize:
+                for i, (stem, out_dir, trans_files) in enumerate(transcribed, 1):
                     txt_file = next((f for f in trans_files if f.endswith(".txt")), None)
                     if txt_file:
-                        sum_config = {
-                            'type': 'cloud' if args.provider in ['gemini', 'claude', 'openai'] else 'local',
-                            'provider': args.provider,
-                            'api_key': args.api_key,
-                            'model': args.summary_model,
-                            'strategy': args.strategy,
-                            'temperature': args.summary_temp,
-                            'max_tokens': args.summary_max_tokens,
-                        }
+                        print(f"[{i}/{len(transcribed)}] Summarizing {Path(txt_file).name}...")
                         summary = textifier.summarize_text(txt_file, args.summary_prompt, sum_config)
                         out_path = Path(txt_file).with_suffix(".summary.md")
                         with open(out_path, "w", encoding="utf-8") as f:
                             f.write(summary)
-                        print(f"[*] Summary saved to {out_path.name}")
+                        print(f"  Summary saved: {out_path.name}")
+                    else:
+                        print(f"[{i}/{len(transcribed)}] No .txt found for {stem}, skipping summary.")
+            elif args.summarize:
+                print(f"\n[*] PHASE 3: Skipped (no transcriptions to summarize)")
+            
+            # ============================================================
+            # PHASE 4: Translate all outputs (if requested)
+            # ============================================================
+            if args.translate_langs and transcribed:
+                print(f"\n{'='*50}")
+                print(f"[*] PHASE 4: Translating to {len(args.translate_langs)} language(s)")
+                print(f"{'='*50}")
+                
+                translatable_exts = {'.vtt', '.srt', '.txt', '.csv'}
+                
+                for lang in args.translate_langs:
+                    print(f"\n--- Translating to {lang} ---")
+                    
+                    for stem, out_dir, trans_files in transcribed:
+                        for trans_file in trans_files:
+                            if Path(trans_file).suffix.lower() in translatable_exts:
+                                print(f"  {Path(trans_file).name} -> {lang}...")
+                                textifier.translate_file(trans_file, source_lang=args.source_lang, target_lang=lang, output_dir=str(out_dir))
                         
-                        # Translate the summary if target languages are provided
-                        if args.translate_langs:
-                            for lang in args.translate_langs:
-                                textifier.translate_file(str(out_path), source_lang=args.source_lang, target_lang=lang, output_dir=args.output_dir)
+                        # Also translate the summary if it exists
+                        sum_file = out_dir / f"{stem}.summary.md"
+                        if sum_file.exists():
+                            print(f"  {sum_file.name} -> {lang}...")
+                            textifier.translate_file(str(sum_file), source_lang=args.source_lang, target_lang=lang, output_dir=str(out_dir))
+            elif args.translate_langs:
+                print(f"\n[*] PHASE 4: Skipped (no files to translate)")
 
             print(f"\n[*] Pipeline complete!")
 

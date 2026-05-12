@@ -5,6 +5,29 @@ All notable changes to Textifier will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-05-12
+
+### 🎉 Major Features
+
+#### Phased Pipeline Architecture
+- **Restructured**: The **Pipeline** (GUI & CLI) now follows a batch-per-phase sequence:
+  1. **Audio Extraction**: Strips audio from all videos first, saving them as high-quality `.mp3` files in the source folder.
+  2. **Batch Transcription**: Transcribes all extracted audio in sequence.
+  3. **Batch Summarization**: Generates summaries for all transcripts (if selected).
+  4. **Batch Translation**: Translates all transcripts and summaries (if selected).
+- **Optimization**: Groups GPU/CPU intensive tasks together, providing better progress visibility for large batches.
+
+#### Audio Extraction Tool
+- **Added**: New `extract_audio` method in the core engine.
+- **Workflow**: Automatically extracts 192kbps mono MP3s (optimized for Whisper) from video files.
+- **Persistence**: Extracted audio is saved to disk, allowing for easier re-transcription or external use.
+
+### ✨ Enhancements
+- **Improved**: CLI `pipeline` now supports the same phased batch logic as the GUI.
+- **Improved**: Pipeline translation now correctly identifies and translates all generated formats (VTT, SRT, TXT, CSV) and the summary.
+
+---
+
 ## [2.2.0] - 2026-05-12
 
 ### 🎉 Major Features
