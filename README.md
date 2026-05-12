@@ -9,6 +9,7 @@ Textifier is a high-performance, professional-grade Python application designed 
 ### 🎙️ World-Class Transcription
 - **Ultra-Fast Engine**: Powered by `faster-whisper` for near-instant results on modern hardware.
 - **Multi-Language Support**: 36+ languages supported with robust auto-detection.
+- **Subtitle Re-Segmentation**: Automatic post-processing splits long Whisper segments into short **2-4 second subtitle cues**, ensuring subtitles display correctly in video players.
 - **VAD Filter**: Built-in **Silero Voice Activity Detection** to filter noise and silence, preventing model "hallucinations."
 - **Word-Level Timestamps**: Precise timing for every single word with detailed metadata export (`.words.json`).
 - **Repetition Penalty**: Advanced control to prevent the model from getting stuck in loops.
@@ -63,7 +64,7 @@ python gui_main.py
 - **Transcribe/Translate Tab**: Unified media processing with multiformat selectors.
 - **Summarize Tab**: Turn transcripts into actionable knowledge with Map-Reduce support.
 - **Pipeline Tab**: The "Set and Forget" mode for full documentation packages.
-- **Advanced Whisper**: Fine-tune Beams, Patience, Repetition Penalty, and VAD.
+- **Advanced Whisper**: Fine-tune Beams, Patience, Repetition Penalty, VAD, and multi-format output selection.
 
 ---
 
@@ -76,11 +77,17 @@ Transcribe audio/video files to multiple formats (VTT, SRT, TXT, CSV, TSV, JSON)
 # Single file (auto-detect language, use default large-v3-turbo)
 python textifier.py transcribe "video.mp4"
 
-# Specify language and output directory
-python textifier.py transcribe "hindi_audio.mp3" --language hi -o ./results/
+# Specify language, output directory, and select formats
+python textifier.py transcribe "hindi_audio.mp3" --language hi -o ./results/ --output-formats vtt srt txt
 
-# Enable word-level timestamps and VAD filter
-python textifier.py transcribe "interview.m4a" --word-timestamps --vad-filter
+# Enable word-level timestamps JSON export
+python textifier.py transcribe "interview.m4a" --word-timestamps
+
+# Fine-tune decoding parameters
+python textifier.py transcribe "lecture.mp4" --beam-size 8 --temperature 0.2 --repetition-penalty 1.3
+
+# Use CPU explicitly and disable VAD
+python textifier.py transcribe "podcast.mp3" --device cpu --no-vad-filter
 
 # Batch process a folder
 python textifier.py transcribe "meeting_recordings/" --folder
@@ -116,7 +123,13 @@ python textifier.py summarize "outputs/" --folder --provider gemini --api-key YO
 Run transcription, translation, and summarization in one go.
 ```bash
 # Transcribe, translate to Spanish, and summarize
-python textifier.py pipeline "video.mp4" --translate-langs es --summarize --api-key YOUR_KEY
+python textifier.py pipeline "video.mp4" --translate-langs es --summarize --provider gemini --api-key YOUR_KEY
+
+# Pipeline with custom Whisper settings and multiple languages
+python textifier.py pipeline "lecture.mp4" --beam-size 8 --output-formats vtt txt --translate-langs fr es de --summarize --provider ollama --summary-model llama3
+
+# Batch pipeline an entire folder
+python textifier.py pipeline "videos/" --folder --translate-langs ja --summarize --api-key YOUR_KEY
 ```
 
 ---

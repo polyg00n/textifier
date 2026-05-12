@@ -88,8 +88,9 @@ class SubtitleEditorFrame(ttk.Frame):
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        # Mouse wheel scrolling
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        # Mouse wheel scrolling (only when cursor is over this frame)
+        self.canvas.bind("<Enter>", lambda _: self.canvas.bind_all("<MouseWheel>", self._on_mousewheel))
+        self.canvas.bind("<Leave>", lambda _: self.canvas.unbind_all("<MouseWheel>"))
 
     def _on_canvas_configure(self, event):
         # Update the width of the scrollable_frame to match the canvas

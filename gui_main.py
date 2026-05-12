@@ -101,9 +101,6 @@ class TextifierApp(tk.Tk):
         # Start queue processing
         self.after(100, self.process_queue)
         
-        # Start queue processing
-        self.after(100, self.process_queue)
-        
     def _configure_dark_theme(self):
         """Configure a dark color scheme for ttk widgets."""
         bg = "#2b2b2b"
@@ -203,12 +200,15 @@ class TextifierApp(tk.Tk):
         self.var_out_txt = tk.BooleanVar(value=True)
         self.var_out_csv = tk.BooleanVar(value=False)
         self.var_out_tsv = tk.BooleanVar(value=False)
+        self.var_out_json = tk.BooleanVar(value=False)
         
         ttk.Checkbutton(frm_fmts, text="VTT", variable=self.var_out_vtt).pack(side="left", padx=5)
         ttk.Checkbutton(frm_fmts, text="SRT", variable=self.var_out_srt).pack(side="left", padx=5)
         ttk.Checkbutton(frm_fmts, text="TXT", variable=self.var_out_txt).pack(side="left", padx=5)
         ttk.Checkbutton(frm_fmts, text="CSV", variable=self.var_out_csv).pack(side="left", padx=5)
         ttk.Checkbutton(frm_fmts, text="TSV", variable=self.var_out_tsv).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_fmts, text="JSON", variable=self.var_out_json).pack(side="left", padx=5)
+        ttk.Label(frm_fmts, text="(word timestamps)", foreground="gray").pack(side="left")
         
         # Row 3: Action button
         ttk.Button(frm_transcribe, text="Transcribe to Text", command=self.start_transcribe).grid(row=3, column=0, columnspan=3, padx=20, pady=10)
@@ -326,12 +326,15 @@ class TextifierApp(tk.Tk):
         if self.var_out_csv.get(): formats.append("csv")
         if self.var_out_tsv.get(): formats.append("tsv")
         
+        # JSON export requires word_timestamps=True in kwargs
+        word_ts = self.var_out_json.get()
+        
         if not formats:
             messagebox.showwarning("Warning", "Please select at least one output format.")
             return
 
         output_dir = self.get_output_dir()
-        threading.Thread(target=self._run_transcribe, args=(input_path, output_dir, language_code, formats), daemon=True).start()
+        threading.Thread(target=self._run_transcribe, args=(input_path, output_dir, language_code, formats), kwargs={'word_timestamps': word_ts} if word_ts else {}, daemon=True).start()
         
     def _run_transcribe(self, input_path, output_dir, language=None, formats=None, **kwargs):
         try:
@@ -473,7 +476,11 @@ class TextifierApp(tk.Tk):
         self.adv_log_prob_threshold = tk.DoubleVar(value=-1.0)
         self.adv_compression_ratio_threshold = tk.DoubleVar(value=2.4)
         self.adv_device = tk.StringVar(value="auto")
-        self.adv_output_format = tk.StringVar(value="vtt")
+        self.adv_out_vtt = tk.BooleanVar(value=True)
+        self.adv_out_srt = tk.BooleanVar(value=False)
+        self.adv_out_txt = tk.BooleanVar(value=True)
+        self.adv_out_csv = tk.BooleanVar(value=False)
+        self.adv_out_tsv = tk.BooleanVar(value=False)
         self.adv_repetition_penalty = tk.DoubleVar(value=1.1)
         self.adv_word_timestamps = tk.BooleanVar(value=True)
         self.adv_vad_filter = tk.BooleanVar(value=True)
@@ -568,10 +575,10 @@ class TextifierApp(tk.Tk):
         scrl_adv_p = ttk.Scrollbar(frm_adv_prompt)
         scrl_adv_p.pack(side="right", fill="y")
         
-        self.txt_prompt = tk.Text(frm_adv_prompt, height=3, width=50, bg="#3c3f41", fg="white", 
+        self.txt_whisper_prompt = tk.Text(frm_adv_prompt, height=3, width=50, bg="#3c3f41", fg="white", 
                                   insertbackground="white", yscrollcommand=scrl_adv_p.set)
-        self.txt_prompt.pack(side="left", fill="x", expand=True)
-        scrl_adv_p.config(command=self.txt_prompt.yview)
+        self.txt_whisper_prompt.pack(side="left", fill="x", expand=True)
+        scrl_adv_p.config(command=self.txt_whisper_prompt.yview)
         ttk.Label(lbl_prompt, text="Provide names, technical terms, or style examples.", foreground="gray").pack(anchor="w", padx=5)
 
         # --- Performance ---
@@ -587,8 +594,17 @@ class TextifierApp(tk.Tk):
         ttk.Label(frm_extra, text="Device:").pack(side="left", padx=5)
         ttk.Combobox(frm_extra, textvariable=self.adv_device, values=["auto", "cuda", "cpu"], width=10).pack(side="left", padx=5)
         
-        ttk.Label(frm_extra, text="Format:").pack(side="left", padx=15)
-        ttk.Combobox(frm_extra, textvariable=self.adv_output_format, values=["vtt", "srt"], width=10).pack(side="left", padx=5)
+        # Output Formats (multi-select checkboxes)
+        frm_adv_fmts = ttk.LabelFrame(lbl_perf, text="Output Formats")
+        frm_adv_fmts.pack(fill="x", padx=5, pady=5)
+        
+        ttk.Checkbutton(frm_adv_fmts, text="VTT", variable=self.adv_out_vtt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_adv_fmts, text="SRT", variable=self.adv_out_srt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_adv_fmts, text="TXT", variable=self.adv_out_txt).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_adv_fmts, text="CSV", variable=self.adv_out_csv).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_adv_fmts, text="TSV", variable=self.adv_out_tsv).pack(side="left", padx=5)
+        ttk.Checkbutton(frm_adv_fmts, text="JSON", variable=self.adv_word_timestamps).pack(side="left", padx=5)
+        ttk.Label(frm_adv_fmts, text="(word timestamps)", foreground="gray").pack(side="left")
         
         # --- Action ---
         ttk.Button(lbl_perf, text="START ADVANCED TRANSCRIPTION", command=self.start_advanced_transcribe).pack(pady=20)
@@ -607,9 +623,10 @@ class TextifierApp(tk.Tk):
             "task": self.adv_task.get(),
             "temperature": self.adv_temp.get(),
             "beam_size": self.adv_beam_size.get(),
+            "best_of": self.adv_best_of.get(),
             "patience": self.adv_patience.get(),
             "condition_on_previous_text": self.adv_condition_on_prev.get(),
-            "initial_prompt": self.txt_prompt.get("1.0", "end-1c").strip() or None,
+            "initial_prompt": self.txt_whisper_prompt.get("1.0", "end-1c").strip() or None,
             "no_speech_threshold": self.adv_no_speech_threshold.get(),
             "log_prob_threshold": self.adv_log_prob_threshold.get(),
             "compression_ratio_threshold": self.adv_compression_ratio_threshold.get(),
@@ -643,17 +660,27 @@ class TextifierApp(tk.Tk):
         
         # Force reload if anything changed
         if (self.core.whisper_model_name != model_name or 
-            getattr(self.core, '_last_device', None) != device or
-            getattr(self.core, '_last_compute_type', None) != compute_type):
+            getattr(self.core.transcriber, '_last_device', None) != device or
+            getattr(self.core.transcriber, '_last_compute_type', None) != compute_type):
             
              self.queue_status(f"Reloading model {model_name} on {device}...")
              self.core.whisper_model = None # Force reload
-             self.core._last_device = device
-             self.core._last_compute_type = compute_type
         
         output_dir = self.get_output_dir()
-        # Add output format to kwargs (transcribe_media doesn't take it yet, we'll fix that)
-        kwargs['output_format'] = self.adv_output_format.get()
+        
+        # Collect selected output formats
+        adv_formats = []
+        if self.adv_out_vtt.get(): adv_formats.append("vtt")
+        if self.adv_out_srt.get(): adv_formats.append("srt")
+        if self.adv_out_txt.get(): adv_formats.append("txt")
+        if self.adv_out_csv.get(): adv_formats.append("csv")
+        if self.adv_out_tsv.get(): adv_formats.append("tsv")
+        
+        if not adv_formats:
+            messagebox.showwarning("Warning", "Please select at least one output format.")
+            return
+        
+        kwargs['output_formats'] = adv_formats
         
         threading.Thread(target=self._run_transcribe, args=(input_path, output_dir), kwargs=kwargs, daemon=True).start()
 
@@ -1167,11 +1194,6 @@ class TextifierApp(tk.Tk):
         self._refresh_summarize_models()
         self._toggle_llm_view() # Ensure label is correct
 
-    def _browse_summary_input(self):
-        f = filedialog.askopenfilename(filetypes=[("Text/VTT/SRT Files", "*.vtt *.srt *.txt *.csv"), ("All files", "*.*")])
-        if f:
-            self.ent_summary_input.delete(0, "end")
-            self.ent_summary_input.insert(0, f)
 
     def _load_prompt(self):
         f = filedialog.askopenfilename(filetypes=[("Markdown files", "*.md"), ("Text files", "*.txt")])
@@ -1278,10 +1300,12 @@ class TextifierApp(tk.Tk):
             self._log_summary(f"Error: {e}")
 
     def _log_summary(self, message):
-        self.txt_summary_log.configure(state="normal")
-        self.txt_summary_log.insert("end", message + "\n")
-        self.txt_summary_log.see("end")
-        self.txt_summary_log.configure(state="disabled")
+        def _update():
+            self.txt_summary_log.configure(state="normal")
+            self.txt_summary_log.insert("end", message + "\n")
+            self.txt_summary_log.see("end")
+            self.txt_summary_log.configure(state="disabled")
+        self.after(0, _update)
 
     def refresh_model_status(self):
         """Check and display model download status for all models."""
@@ -1395,11 +1419,13 @@ class TextifierApp(tk.Tk):
         scrl_log.config(command=self.txt_pipe_log.yview)
 
     def log_pipe(self, message):
-        self.txt_pipe_log.configure(state="normal")
-        self.txt_pipe_log.insert("end", message + "\n")
-        self.txt_pipe_log.see("end")
-        self.txt_pipe_log.configure(state="disabled")
-        self.log_message(f"[Pipeline] {message}")
+        def _update():
+            self.txt_pipe_log.configure(state="normal")
+            self.txt_pipe_log.insert("end", message + "\n")
+            self.txt_pipe_log.see("end")
+            self.txt_pipe_log.configure(state="disabled")
+        self.after(0, _update)
+        self.queue_status(f"[Pipeline] {message}")
 
     def start_pipeline(self):
         input_path = self.ent_input.get()
@@ -1421,7 +1447,7 @@ class TextifierApp(tk.Tk):
         if self.var_pipe_trans_csv.get(): exts.append(".csv")
         
         source_display = self.var_translate_source.get()
-        source_code = None
+        source_code = "en"  # Default fallback to English
         for name, code in MBART_LANGUAGES:
             if name == source_display:
                 source_code = code
@@ -1511,8 +1537,8 @@ class TextifierApp(tk.Tk):
                         self.core.whisper_model = None
                     try:
                         # Pass requested formats
-                        config['whisper_kwargs']['output_formats'] = config['transcribe_fmts']
-                        self.core.transcribe_media(str(file_path), str(out_dir), **config['whisper_kwargs'])
+                        whisper_args = {**config['whisper_kwargs'], 'output_formats': config['transcribe_fmts']}
+                        self.core.transcribe_media(str(file_path), str(out_dir), **whisper_args)
                         self.log_pipe(f"Transcription finished.")
                     except Exception as e:
                         self.log_pipe(f"Transcription error: {e}")

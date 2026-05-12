@@ -9,10 +9,9 @@ import time
 import subprocess
 import numpy as np
 import csv
-import json
 import requests
 
-# Confgure logger
+# Configure logger
 # import whisper
 # import transformers
 
@@ -38,9 +37,9 @@ _WHISPER_MODELS = {
     "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
 }
 
-# Confgure logger
+# Configure logger
 logging.basicConfig(
-    filename='textifier.log',
+    filename=str(Path(__file__).parent / 'textifier.log'),
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -240,6 +239,8 @@ class Transcriber:
         
         if 'vad_filter' not in kwargs:
             kwargs['vad_filter'] = True
+        # Always enable word-level timestamps for accurate subtitle re-segmentation
+        kwargs['word_timestamps'] = True
         segments, info = self.whisper_model.transcribe(audio, **kwargs)
         self._update_status(f"Detected language: {info.language} ({info.language_probability:.2f})")
         
@@ -308,6 +309,14 @@ class Translator:
             max_length=512, num_beams=5
         )
         return self.tokenizer.batch_decode(translated, skip_special_tokens=True)[0]
+
+class SubtitleSegment:
+    """Lightweight segment object compatible with FormatHandler save methods."""
+    def __init__(self, start, end, text, words=None):
+        self.start = start
+        self.end = end
+        self.text = text
+        self.words = words or []
 
 class FormatHandler:
     """Handles VTT/SRT parsing and saving."""
@@ -488,6 +497,68 @@ class FormatHandler:
         with open(output_path, 'w', encoding='utf-8') as f:
             for line in lines:
                 f.write(line + '\n')
+
+    @staticmethod
+    def resegment_for_subtitles(segments, max_duration=3.0, max_words=12):
+        """Re-segment transcription output into short subtitle cues.
+        
+        Uses word-level timestamps to split long segments into cues that are
+        suitable for on-screen subtitle display (2-4 seconds each).
+        
+        Args:
+            segments: List of faster-whisper segment objects with word-level data.
+            max_duration: Maximum duration in seconds for a single subtitle cue.
+            max_words: Maximum number of words per subtitle cue.
+            
+        Returns:
+            List of SubtitleSegment objects with short, uniform durations.
+        """
+        subtitle_cues = []
+        
+        for segment in segments:
+            # If no word-level data is available, fall back to the original segment
+            if not hasattr(segment, 'words') or not segment.words:
+                subtitle_cues.append(SubtitleSegment(
+                    start=segment.start,
+                    end=segment.end,
+                    text=segment.text.strip()
+                ))
+                continue
+            
+            # Build short cues from word-level timestamps
+            current_words = []
+            cue_start = None
+            
+            for word in segment.words:
+                if cue_start is None:
+                    cue_start = word.start
+                
+                current_words.append(word)
+                cue_duration = word.end - cue_start
+                
+                # Flush the current cue if we hit the duration or word limit
+                if cue_duration >= max_duration or len(current_words) >= max_words:
+                    text = "".join(w.word for w in current_words).strip()
+                    if text:
+                        subtitle_cues.append(SubtitleSegment(
+                            start=cue_start,
+                            end=word.end,
+                            text=text
+                        ))
+                    current_words = []
+                    cue_start = None
+            
+            # Flush any remaining words
+            if current_words:
+                text = "".join(w.word for w in current_words).strip()
+                if text:
+                    subtitle_cues.append(SubtitleSegment(
+                        start=cue_start,
+                        end=current_words[-1].end,
+                        text=text
+                    ))
+        
+        return subtitle_cues
 
 class CallbackStream:
     """Redirects writes to a callback function."""
@@ -770,6 +841,11 @@ class TextifierCore:
         _ = kwargs.pop('output_format', None)
         output_formats = kwargs.pop('output_formats', ['vtt', 'srt', 'txt', 'csv', 'tsv'])
         
+        # Track whether the user explicitly requested word-level JSON export.
+        # word_timestamps is now always forced True internally for re-segmentation,
+        # but we only write the .words.json file if the user actually asked for it.
+        user_requested_word_timestamps = kwargs.get('word_timestamps', False)
+        
         # IMPLEMENTATION OF PUNCTUATION FIX
         # If no initial prompt is provided, we supply a standard one to force punctuation/capitalization style.
         # This prevents the model from "drifting" into lowercase/no-punctuation mode.
@@ -786,41 +862,47 @@ class TextifierCore:
         formats = output_formats
         self._update_status(f"Writing formats: {', '.join(formats)}...")
         
+        # Re-segment into short subtitle cues (2-4s) for timed output formats.
+        # This ensures subtitles display properly in video players without
+        # overflowing the screen with too much text at once.
+        subtitle_segments = self.format_handler.resegment_for_subtitles(segments)
+        self._update_status(f"Re-segmented {len(segments)} chunks into {len(subtitle_segments)} subtitle cues.")
+        
         base_output_path = (Path(output_dir) if output_dir else input_path.parent) / input_path.stem
         created_files = []
 
-        # Save VTT
+        # Save VTT (uses short subtitle cues)
         if 'vtt' in formats:
             vtt_path = base_output_path.with_suffix(".vtt")
-            self.format_handler.save_vtt(segments, vtt_path)
+            self.format_handler.save_vtt(subtitle_segments, vtt_path)
             created_files.append(str(vtt_path))
 
-        # Save SRT
+        # Save SRT (uses short subtitle cues)
         if 'srt' in formats:
             srt_path = base_output_path.with_suffix(".srt")
-            self.format_handler.save_srt(segments, srt_path)
+            self.format_handler.save_srt(subtitle_segments, srt_path)
             created_files.append(str(srt_path))
 
-        # Save TXT
+        # Save TXT (uses original segments — no timecodes, so full paragraphs are fine)
         if 'txt' in formats:
             txt_path = base_output_path.with_suffix(".txt")
             self.format_handler.save_txt(segments, txt_path)
             created_files.append(str(txt_path))
 
-        # Save CSV
+        # Save CSV (uses short subtitle cues)
         if 'csv' in formats:
             csv_path = base_output_path.with_suffix(".csv")
-            self.format_handler.save_csv(segments, csv_path)
+            self.format_handler.save_csv(subtitle_segments, csv_path)
             created_files.append(str(csv_path))
 
-        # Save TSV
+        # Save TSV (uses short subtitle cues)
         if 'tsv' in formats:
             tsv_path = base_output_path.with_suffix(".tsv")
-            self.format_handler.save_tsv(segments, tsv_path)
+            self.format_handler.save_tsv(subtitle_segments, tsv_path)
             created_files.append(str(tsv_path))
 
-        # Save Word-Level JSON if requested
-        if kwargs.get('word_timestamps'):
+        # Save Word-Level JSON (uses original segments for full detail)
+        if user_requested_word_timestamps:
             json_path = base_output_path.with_suffix(".words.json")
             word_data = []
             for s in segments:

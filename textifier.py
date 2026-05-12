@@ -36,11 +36,72 @@ class Textifier:
         """Download the translation model."""
         self.core.model_manager.download_translation_model()
 
+
+def _add_whisper_options(parser):
+    """Add shared Whisper transcription options to a parser."""
+    parser.add_argument("-m", "--model", default="large-v3-turbo",
+                        help="Whisper model [default: large-v3-turbo]")
+    parser.add_argument("--language",
+                        help="Source audio language code [default: auto-detect]")
+    parser.add_argument("--task", choices=["transcribe", "translate"], default="transcribe",
+                        help="Task: 'transcribe' keeps original language, 'translate' converts to English [default: transcribe]")
+    parser.add_argument("--output-formats", nargs="+", default=["vtt", "srt", "txt", "csv", "tsv"],
+                        help="Output formats to generate [default: vtt srt txt csv tsv]")
+    parser.add_argument("--word-timestamps", action="store_true",
+                        help="Export word-level timestamps to .words.json")
+    parser.add_argument("--vad-filter", action="store_true", default=True,
+                        help="Enable Silero VAD filter [default: True]")
+    parser.add_argument("--no-vad-filter", action="store_true",
+                        help="Disable VAD filter")
+    parser.add_argument("--initial-prompt",
+                        help="Context text to guide punctuation, capitalization, or terminology")
+    parser.add_argument("--beam-size", type=int, default=5,
+                        help="Number of beams for beam search [default: 5]")
+    parser.add_argument("--best-of", type=int, default=5,
+                        help="Number of candidates to sample from [default: 5]")
+    parser.add_argument("--patience", type=float, default=1.0,
+                        help="Beam search patience factor [default: 1.0]")
+    parser.add_argument("--temperature", type=float, default=0.0,
+                        help="Sampling temperature, 0=deterministic [default: 0.0]")
+    parser.add_argument("--repetition-penalty", type=float, default=1.1,
+                        help="Penalty for repeated tokens to prevent loops [default: 1.1]")
+    parser.add_argument("--no-speech-threshold", type=float, default=0.6,
+                        help="Threshold above which a segment is considered silent [default: 0.6]")
+    parser.add_argument("--condition-on-previous-text", action="store_true", default=True,
+                        help="Condition on previous text for context [default: True]")
+    parser.add_argument("--no-condition-on-previous-text", action="store_true",
+                        help="Disable conditioning on previous text")
+    parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto",
+                        help="Compute device [default: auto]")
+
+
+def _build_whisper_kwargs(args):
+    """Build the kwargs dict for transcribe_media from parsed args."""
+    kwargs = {
+        "task": args.task,
+        "language": args.language,
+        "word_timestamps": args.word_timestamps,
+        "vad_filter": not args.no_vad_filter if args.no_vad_filter else args.vad_filter,
+        "initial_prompt": args.initial_prompt,
+        "beam_size": args.beam_size,
+        "best_of": args.best_of,
+        "patience": args.patience,
+        "temperature": args.temperature,
+        "repetition_penalty": args.repetition_penalty,
+        "no_speech_threshold": args.no_speech_threshold,
+        "condition_on_previous_text": not args.no_condition_on_previous_text,
+        "output_formats": args.output_formats,
+    }
+    return kwargs
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Textifier v2.0.0 - Video/Audio Transcription, Translation, and Summarization Tool",
+        description="Textifier v2.1.0 - Video/Audio Transcription, Translation, and Summarization Tool",
         epilog="Examples:\n"
-               "  textifier.py transcribe video.mp4 --model large-v3-turbo --word-timestamps\n"
+               "  textifier.py transcribe video.mp4\n"
+               "  textifier.py transcribe video.mp4 --output-formats vtt srt txt --beam-size 8\n"
+               "  textifier.py transcribe folder/ --folder --language hi --word-timestamps\n"
                "  textifier.py translate video.vtt --target-lang es\n"
                "  textifier.py summarize transcript.txt --provider gemini --api-key YOUR_KEY\n"
                "  textifier.py pipeline video.mp4 --translate-langs fr es --summarize --provider ollama\n",
@@ -53,11 +114,7 @@ def main():
     transcribe_parser.add_argument("input_file", help="Path to input video/audio file or folder")
     transcribe_parser.add_argument("-f", "--folder", action="store_true", help="Process all media files in the folder")
     transcribe_parser.add_argument("-o", "--output-dir", help="Directory to save output files")
-    transcribe_parser.add_argument("-m", "--model", default="large-v3-turbo", help="Whisper model [default: large-v3-turbo]")
-    transcribe_parser.add_argument("--language", help="Source audio language [default: auto-detect]")
-    transcribe_parser.add_argument("--word-timestamps", action="store_true", help="Export word-level timestamps to JSON")
-    transcribe_parser.add_argument("--vad-filter", action="store_true", default=True, help="Enable VAD filter [default: True]")
-    transcribe_parser.add_argument("--initial-prompt", help="Optional text to provide as context for the first window")
+    _add_whisper_options(transcribe_parser)
     
     # Translate command
     translate_parser = subparsers.add_parser("translate", help="Translate subtitle/text files")
@@ -85,17 +142,20 @@ def main():
     # Pipeline command
     pipeline_parser = subparsers.add_parser("pipeline", help="Run full pipeline: transcribe -> translate -> summarize")
     pipeline_parser.add_argument("input_file", help="Path to input media file or folder")
+    pipeline_parser.add_argument("-f", "--folder", action="store_true", help="Process all media files in the folder")
     pipeline_parser.add_argument("-o", "--output-dir", help="Directory for all outputs")
-    pipeline_parser.add_argument("--model", default="large-v3-turbo", help="Whisper model")
-    pipeline_parser.add_argument("--language", help="Source language for transcription")
+    _add_whisper_options(pipeline_parser)
+    # Pipeline-specific translation & summarization options
     pipeline_parser.add_argument("--translate-langs", nargs="+", help="One or more target language codes for translation")
+    pipeline_parser.add_argument("--source-lang", default="en", help="Source language for translation [default: en]")
     pipeline_parser.add_argument("--summarize", action="store_true", help="Run summarization after processing")
     pipeline_parser.add_argument("--provider", default='gemini', help="LLM provider for summarization")
     pipeline_parser.add_argument("--api-key", help="API Key for summarization")
     pipeline_parser.add_argument("--summary-model", help="LLM Model name for summarization")
     pipeline_parser.add_argument("--strategy", choices=['single_pass', 'map_reduce'], default='map_reduce', help="Summarization strategy")
-    pipeline_parser.add_argument("--temp", type=float, default=0.3, help="LLM Temperature")
-    pipeline_parser.add_argument("--max-tokens", type=int, default=1500, help="Max output tokens")
+    pipeline_parser.add_argument("--summary-prompt", default="Summarize this transcript.", help="Prompt for summarization")
+    pipeline_parser.add_argument("--summary-temp", type=float, default=0.3, help="LLM Temperature for summarization [default: 0.3]")
+    pipeline_parser.add_argument("--summary-max-tokens", type=int, default=1500, help="Max output tokens for summarization [default: 1500]")
     
     # Download translation model command
     subparsers.add_parser("download-translation-model", help="Download the mBART translation model")
@@ -111,16 +171,16 @@ def main():
     try:
         if args.command == "transcribe":
             input_path = Path(args.input_file)
-            kwargs = {
-                "language": args.language,
-                "word_timestamps": args.word_timestamps,
-                "vad_filter": args.vad_filter,
-                "initial_prompt": args.initial_prompt
-            }
+            kwargs = _build_whisper_kwargs(args)
             if args.folder:
                 video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
                 files = [f for f in input_path.glob('*') if f.suffix.lower() in video_extensions]
-                for file in files:
+                if not files:
+                    print(f"[!] No media files found in {input_path}")
+                    return
+                print(f"[*] Found {len(files)} media files to transcribe")
+                for i, file in enumerate(files, 1):
+                    print(f"\n[*] Processing {i}/{len(files)}: {file.name}")
                     textifier.transcribe_media(str(file), output_dir=args.output_dir, **kwargs)
             else:
                 textifier.transcribe_media(args.input_file, output_dir=args.output_dir, **kwargs)
@@ -165,31 +225,67 @@ def main():
                 print(f"\n--- SUMMARY ---\n{summary}")
 
         elif args.command == "pipeline":
-            # Simplified pipeline for CLI
-            # 1. Transcribe
-            trans_files = textifier.transcribe_media(args.input_file, output_dir=args.output_dir, language=args.language)
+            whisper_kwargs = _build_whisper_kwargs(args)
+
+            # Determine files to process
+            input_path = Path(args.input_file)
+            video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
             
-            # 2. Translate
-            if args.translate_langs and trans_files:
-                txt_file = next((f for f in trans_files if f.endswith(".txt")), None)
-                if txt_file:
-                    for lang in args.translate_langs:
-                        textifier.translate_file(txt_file, source_lang="en", target_lang=lang, output_dir=args.output_dir)
-            
-            # 3. Summarize
-            if args.summarize and trans_files:
-                txt_file = next((f for f in trans_files if f.endswith(".txt")), None)
-                if txt_file:
-                    sum_config = {'type': 'cloud', 'provider': args.provider, 'api_key': args.api_key, 'model': args.summary_model}
-                    summary = textifier.summarize_text(txt_file, "Summarize this transcript.", sum_config)
-                    out_path = Path(txt_file).with_suffix(".summary.md")
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        f.write(summary)
-                    
-                    # NEW: Translate the summary if target languages are provided
-                    if args.translate_langs:
-                        for lang in args.translate_langs:
-                            textifier.translate_file(str(out_path), source_lang="en", target_lang=lang, output_dir=args.output_dir)
+            if args.folder:
+                media_files = [f for f in input_path.glob('*') if f.suffix.lower() in video_extensions]
+                if not media_files:
+                    print(f"[!] No media files found in {input_path}")
+                    return
+                print(f"[*] Pipeline: Found {len(media_files)} media files")
+            else:
+                media_files = [input_path]
+
+            for i, media_file in enumerate(media_files, 1):
+                print(f"\n{'='*50}")
+                print(f"[*] Pipeline {i}/{len(media_files)}: {media_file.name}")
+                print(f"{'='*50}")
+                
+                # 1. Transcribe
+                trans_files = textifier.transcribe_media(str(media_file), output_dir=args.output_dir, **whisper_kwargs)
+                if not trans_files:
+                    print(f"[!] Transcription failed for {media_file.name}, skipping.")
+                    continue
+                
+                # 2. Translate
+                if args.translate_langs:
+                    # Find all translatable files from transcription output
+                    translatable_exts = {'.vtt', '.srt', '.txt', '.csv'}
+                    for trans_file in trans_files:
+                        if Path(trans_file).suffix.lower() in translatable_exts:
+                            for lang in args.translate_langs:
+                                print(f"[*] Translating {Path(trans_file).name} to {lang}...")
+                                textifier.translate_file(trans_file, source_lang=args.source_lang, target_lang=lang, output_dir=args.output_dir)
+                
+                # 3. Summarize
+                if args.summarize:
+                    txt_file = next((f for f in trans_files if f.endswith(".txt")), None)
+                    if txt_file:
+                        sum_config = {
+                            'type': 'cloud' if args.provider in ['gemini', 'claude', 'openai'] else 'local',
+                            'provider': args.provider,
+                            'api_key': args.api_key,
+                            'model': args.summary_model,
+                            'strategy': args.strategy,
+                            'temperature': args.summary_temp,
+                            'max_tokens': args.summary_max_tokens,
+                        }
+                        summary = textifier.summarize_text(txt_file, args.summary_prompt, sum_config)
+                        out_path = Path(txt_file).with_suffix(".summary.md")
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            f.write(summary)
+                        print(f"[*] Summary saved to {out_path.name}")
+                        
+                        # Translate the summary if target languages are provided
+                        if args.translate_langs:
+                            for lang in args.translate_langs:
+                                textifier.translate_file(str(out_path), source_lang=args.source_lang, target_lang=lang, output_dir=args.output_dir)
+
+            print(f"\n[*] Pipeline complete!")
 
         elif args.command == "download-translation-model":
             textifier.download_translation_model()

@@ -5,6 +5,53 @@ All notable changes to Textifier will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-05-12
+
+### 🎉 Major Features
+
+#### Subtitle Re-Segmentation Engine
+- **Added**: Automatic post-processing that splits Whisper's variable-length segments into short **2-4 second subtitle cues** using word-level timestamps.
+- **Problem Solved**: Whisper produces long paragraphs at the start of a video and shorter ones later, causing subtitle text to overflow the screen in video players.
+- **Implementation**: New `FormatHandler.resegment_for_subtitles()` method and `SubtitleSegment` class in `textifier_core.py`.
+- **Scope**: Applied to all timed output formats (VTT, SRT, CSV, TSV). TXT output retains full paragraphs since it has no timecodes.
+- **Consistency**: Word timestamps are now always enabled internally to provide the per-word data needed for re-segmentation.
+- **Impact**: Affects all usage modes — single file, batch processing, pipeline, and Advanced Whisper.
+
+### ✨ Enhancements
+
+#### GUI Format Parity
+- **Fixed**: **Advanced Whisper** tab previously had a broken VTT/SRT-only dropdown that was silently ignored by the core. Replaced with **6 multi-select checkboxes** (VTT, SRT, TXT, CSV, TSV, JSON) matching the Batch and Pipeline tabs.
+- **Added**: **JSON (word timestamps)** checkbox to the **Batch Transcribe** tab for parity.
+- **Fixed**: Advanced tab now properly passes `output_formats` list to the core instead of the ignored `output_format` string.
+- **Added**: Format validation in Advanced tab — warns if no format is selected before starting.
+
+#### CLI Full Parity
+- **Added**: 12 new options to `transcribe` command: `--output-formats`, `--task`, `--beam-size`, `--best-of`, `--patience`, `--temperature`, `--repetition-penalty`, `--no-speech-threshold`, `--condition-on-previous-text`, `--no-condition-on-previous-text`, `--no-vad-filter`, `--device`.
+- **Added**: All Whisper options now shared between `transcribe` and `pipeline` commands via `_add_whisper_options()` helper.
+- **Added**: `--folder` flag for `pipeline` command enabling batch pipeline processing.
+- **Added**: `--source-lang` to `pipeline` for non-English source content.
+- **Added**: `--summary-prompt`, `--summary-temp`, `--summary-max-tokens` to `pipeline` for full summarization control.
+- **Improved**: Pipeline translation now processes all translatable output formats (VTT, SRT, TXT, CSV), not just `.txt`.
+- **Refactored**: Shared `_build_whisper_kwargs()` helper eliminates duplication between CLI commands.
+- **Updated**: Version banner to v2.1.0, examples updated to show new options.
+
+### 🧪 Testing
+- **Added**: 5 new unit tests for `resegment_for_subtitles()`:
+  - Duration-based splitting of long segments.
+  - Word-count-based splitting.
+  - Fallback for segments without word-level data.
+  - Preservation of already-short segments.
+  - Multi-segment chronological ordering.
+- **Result**: All 15 tests pass (10 existing + 5 new).
+
+### 📦 Files Modified
+- `textifier_core.py` — Added `SubtitleSegment` class, `resegment_for_subtitles()`, forced `word_timestamps=True`, re-segmentation in `transcribe_media()`.
+- `gui_main.py` — Multi-format checkboxes in Advanced tab, JSON checkbox in Batch tab, format list wiring.
+- `textifier.py` — Complete rewrite for full CLI parity with shared option helpers.
+- `tests/test_core.py` — 5 new re-segmentation tests.
+
+---
+
 ## [2.1.0] - 2026-03-16
 
 ### 🎉 Major Features
